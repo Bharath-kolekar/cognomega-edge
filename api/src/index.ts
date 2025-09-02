@@ -26,7 +26,7 @@ const corsOptions = {
   allowHeaders: ['Authorization', 'Content-Type'],
   maxAge: 86400,
 };
-app.use('*', cors({ origin: 'https://a315bf72.cognomega-frontend.pages.dev' }));
+app.use('*', cors({ origin: /^https:\/\/([a-z0-9-]+\.)?cognomega-frontend\.pages\.dev$/ }));
 app.use('*', async (c, next) => {
   const id = uuidv4();
   c.set('reqId', id);
@@ -85,6 +85,7 @@ app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
 
 app.all('*', (c) => c.json({ error: 'Not Found' }, 404));
 export default app;
+
 
 
 
