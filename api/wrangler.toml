@@ -1,4 +1,4 @@
-name = "cognomega-api"
+﻿name = "cognomega-api"
 main = "src/index.ts"
 compatibility_date = "2024-09-02"
 
@@ -8,8 +8,9 @@ JWT_AUD = "cognomega-clients"
 
 [[kv_namespaces]]
 binding = "CREDITS"
-id = "CREDITS_NAMESPACE_ID"
+id = "fbabd2063d3c43c2bba6e8b527d72bb5"
 
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "cognomega-files"
+
