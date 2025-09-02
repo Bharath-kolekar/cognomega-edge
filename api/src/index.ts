@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+﻿import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,7 +15,18 @@ type Bindings = {
 };
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.use('*', cors());
+const corsOptions = {
+  origin: (origin: string | undefined) => {
+    if (!origin) return false;
+    if (origin === 'https://cognomega-frontend.pages.dev') return true;
+    if (origin.endsWith('.cognomega-frontend.pages.dev')) return true; // hashed deploy URLs
+    return false;
+  },
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['Authorization', 'Content-Type'],
+  maxAge: 86400,
+};
+app.use('*', cors(corsOptions));
 app.use('*', async (c, next) => {
   const id = uuidv4();
   c.set('reqId', id);
@@ -74,3 +85,4 @@ app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
 
 app.all('*', (c) => c.json({ error: 'Not Found' }, 404));
 export default app;
+
