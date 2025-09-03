@@ -1,20 +1,17 @@
-# --- frontend ---
-frontend/node_modules/
-frontend/dist/
-frontend/.env.production
+﻿# --- frontend ---
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.env.production
+/frontend/.env*
 
 # --- api ---
-api/node_modules/
+/api/node_modules/
+/api/gen-jwt.mjs
 
 # local backups / misc
-ruleset-backup.json
-# --- frontend ---
-frontend/node_modules/
-frontend/dist/
-frontend/.env.production
+/ruleset-backup.json
 
-# --- api ---
-api/node_modules/
-
-# local backups / misc
-ruleset-backup.json
+# editors/OS
+.vscode/
+.DS_Store
+Thumbs.db
