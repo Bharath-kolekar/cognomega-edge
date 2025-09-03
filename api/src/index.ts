@@ -1,162 +1,170 @@
-﻿import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { createMiddleware } from 'hono/factory';
-import { v4 as uuidv4 } from 'uuid';
-import * as jose from 'jose';
-import { neon, neonConfig } from '@neondatabase/serverless';
+﻿import { Hono } from 'hono'
+import { createMiddleware } from 'hono/factory'
+import * as jose from 'jose'
+import { neon, neonConfig } from '@neondatabase/serverless'
 
 type Bindings = {
-  CREDITS: KVNamespace;
-  FILES: R2Bucket;
-  JWT_SECRET: string;
-  JWT_ISS?: string;
-  JWT_AUD?: string;
-  NEON_DATABASE_URL: string;
-};
-const app = new Hono<{ Bindings: Bindings }>();
+  CREDITS: KVNamespace
+  FILES: R2Bucket
+  JWT_SECRET: string
+  JWT_ISS?: string
+  JWT_AUD?: string
+  NEON_DATABASE_URL?: string
+  TURNSTILE_SECRET?: string
+}
 
-const corsOptions = {
-  origin: (origin: string | undefined) => {
-    if (!origin) return false;
-    if (origin === 'https://cognomega-frontend.pages.dev') return true;
-    if (origin.endsWith('.cognomega-frontend.pages.dev')) return true; // hashed deploy URLs
-    return false;
-  },
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ["Authorization","Content-Type","CF-Turnstile-Token"],
-  maxAge: 86400,
-};
-app.use('*', cors({
-  origin: (origin) => {
-    if (!origin) return '';
-    const allow = [
-      /^https:\/\/([a-z0-9-]+\.)?cognomega-frontend\.pages\.dev$/,
-      /^https:\/\/app\.cognomega\.com$/
-    ];
-    return allow.some(re => re.test(origin)) ? origin : '';
-  },
-  allowHeaders: ["Authorization","Content-Type","CF-Turnstile-Token"],
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  maxAge: 86400,
-}));
+const app = new Hono<{ Bindings: Bindings }>()
+
+// ---------- Config ----------
+const ALLOWED_ORIGINS = new Set<string>([
+  'https://app.cognomega.com',
+])
+
+const REQUIRE_TS_GUEST = false          // keep guest auth snappy
+const REQUIRE_TS_UPLOAD = true          // protect uploads
+
+// ---------- Helpers ----------
+const enc = new TextEncoder()
+
+function setCors(c: any) {
+  const origin = c.req.header('Origin') || ''
+  if (ALLOWED_ORIGINS.has(origin)) {
+    c.header('Access-Control-Allow-Origin', origin)
+    c.header('Vary', 'Origin')
+    c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, CF-Turnstile-Token')
+    c.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  }
+}
 app.use('*', async (c, next) => {
-  const id = uuidv4();
-  c.set('reqId', id);
-  await next();
-  c.header('X-Request-ID', id);
-  c.header('Cache-Control', 'no-store');
-  // Security headers (global)
-  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-  c.header('X-Content-Type-Options', 'nosniff');
-  c.header('X-Frame-Options', 'DENY');
-  c.header('Referrer-Policy', 'no-referrer');
-  c.header('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
-});
+  setCors(c)
+  if (c.req.method === 'OPTIONS') return c.body(null, 204)
+  return next()
+})
 
-const rateLimit = (limit: number, windowSec: number) => createMiddleware(async (c, next) => {
-  const ip = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown';
-  const key = `rl:${ip}:${Math.floor(Date.now()/1000/windowSec)}`;
-  const used = parseInt((await c.env.CREDITS.get(key)) || '0');
-  if (used >= limit) return c.text('Too Many Requests', 429);
-  await c.env.CREDITS.put(key, String(used + 1), { expirationTtl: windowSec * 2 });
-  await next();
-});
+async function signJwt(env: Bindings, role: string, sub = role, ttl = '5m') {
+  const token = await new jose.SignJWT({ role })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(env.JWT_ISS || 'cognomega')
+    .setAudience(env.JWT_AUD || 'cognomega-clients')
+    .setSubject(sub)
+    .setIssuedAt()
+    .setExpirationTime(ttl)
+    .sign(enc.encode(env.JWT_SECRET))
+  return token
+}
 
-const auth = createMiddleware(async (c, next) => {
-  const header = c.req.header('Authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return c.text('Unauthorized', 401);
+async function verifyJwt(env: Bindings, token: string) {
+  const secret = enc.encode(env.JWT_SECRET)
+  await jose.jwtVerify(token, secret, {
+    issuer: env.JWT_ISS || 'cognomega',
+    audience: env.JWT_AUD || 'cognomega-clients',
+  })
+}
+
+async function verifyTurnstileWithEnv(env: Bindings, token: string, remoteIp?: string) {
+  if (!token) return { success: false, 'error-codes': ['missing-input'] }
+  // If no secret is configured, soft-pass so the feature still works.
+  if (!env.TURNSTILE_SECRET) return { success: true }
+  const form = new FormData()
+  form.set('secret', env.TURNSTILE_SECRET)
+  form.set('response', token)
+  if (remoteIp) form.set('remoteip', remoteIp)
   try {
-    const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-    await jose.jwtVerify(token, secret, {
-      issuer: c.env.JWT_ISS || 'cognomega',
-      audience: c.env.JWT_AUD || 'cognomega-clients',
-    });
-  } catch { return c.text('Unauthorized', 401) }
-  await next();
-});
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: form,
+    })
+    return await r.json()
+  } catch {
+    return { success: false, 'error-codes': ['network-error'] }
+  }
+}
 
-app.get('/health', (c) => c.json({ ok: true }));
+// ---------- Middlewares ----------
+const requireAuth = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
+  const hdr = c.req.header('Authorization') || ''
+  const [, token] = hdr.split(' ')
+  if (!token) return c.text('Unauthorized', 401)
+  try {
+    await verifyJwt(c.env, token)
+  } catch {
+    return c.text('Unauthorized', 401)
+  }
+  await next()
+})
+
+const requireTurnstile = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
+  const token = c.req.header('CF-Turnstile-Token') || ''
+  const ip = c.req.header('CF-Connecting-IP') || undefined
+  const out: any = await verifyTurnstileWithEnv(c.env, token, ip)
+  if (!out?.success) {
+    console.log('TURNSTILE_FAIL', JSON.stringify(out))
+    return c.json({ error: 'turnstile_failed' }, 403)
+  }
+  await next()
+})
+
+// ---------- Health ----------
 app.get('/ready', async (c) => {
   try {
-    neonConfig.fetchConnectionCache = true;
-    const sql = neon(c.env.NEON_DATABASE_URL);
-    const rows = await sql`select 1 as ok`;
-    return c.json({ ok: rows[0]?.ok === 1 });
-  } catch (e) { return c.json({ ok: false, error: String(e) }, 503) }
-});
-
-app.get('/v1/credits', auth, rateLimit(60, 60), async (c) => {
-  return c.json({ balance: 1000 });
-});
-
-app.post('/auth/guest', async (c) => {
-  // Require Turnstile to mint a guest JWT
-  if (!c.env.TURNSTILE_SECRET) return c.json({ error: 'turnstile_not_configured' }, 500);
-  const tsToken = c.req.header('CF-Turnstile-Token') || '';
-  if (!tsToken) return c.json({ error: 'missing_turnstile' }, 400);
-  // Verify Turnstile
-  const ip = c.req.header('CF-Connecting-IP') || '';
-  const resp = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    body: new URLSearchParams({
-      secret: c.env.TURNSTILE_SECRET,
-      response: tsToken,
-      remoteip: ip,
-    }),
-  });
-  const out = await resp.json();
-  if (!out.success) return c.json({ error: 'turnstile_failed' }, 403);
-
-  // Mint 5-min JWT
-  const now = Math.floor(Date.now() / 1000);
-  const sub = 'guest:' + crypto.randomUUID();
-  const token = await new jose.SignJWT({ role: 'guest' })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuer(c.env.JWT_ISS)
-    .setAudience(c.env.JWT_AUD)
-    .setSubject(sub)
-    .setIssuedAt(now)
-    .setExpirationTime(now + 300) // 5 minutes
-    .sign(new TextEncoder().encode(c.env.JWT_SECRET!));
-
-  return c.json({ token, expires_in: 300 });
-});
-
-app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
-  // Turnstile (optional, enforced if secret is set)
-  if (c.env.TURNSTILE_SECRET) {
-    const tsToken = c.req.header('CF-Turnstile-Token') || '';
-    if (!tsToken) return c.json({ error: 'missing_turnstile' }, 400);
-    const ip = c.req.header('CF-Connecting-IP') || '';
-    const chk = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      body: new URLSearchParams({ secret: c.env.TURNSTILE_SECRET, response: tsToken, remoteip: ip }),
-    });
-    const out = await chk.json();
-    if (!out.success) return c.json({ error: 'turnstile_failed' }, 403);
+    if (c.env.NEON_DATABASE_URL) {
+      neonConfig.fetchConnectionCache = true
+      const sql = neon(c.env.NEON_DATABASE_URL)
+      await sql`select 1 as ok`
+    }
+    return c.json({ ok: true })
+  } catch {
+    return c.json({ ok: false }, 500)
   }
+})
 
-  const ct = c.req.header('content-type') || '';
-  if (!ct.startsWith('multipart/form-data')) return c.text('Bad Request', 400);
-  const form = await c.req.parseBody();
-  const file = form['file'];
-  if (!(file instanceof File)) return c.text('No file', 400);
-  const key = `up/${Date.now()}_${file.name}`;
-  const putRes = await c.env.FILES.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
-  return c.json({ key, etag: putRes?.etag });
-});
+// ---------- Auth ----------
+app.post('/auth/guest', async (c) => {
+  if (REQUIRE_TS_GUEST) {
+    const token = c.req.header('CF-Turnstile-Token') || ''
+    const ip = c.req.header('CF-Connecting-IP') || undefined
+    const out: any = await verifyTurnstileWithEnv(c.env, token, ip)
+    if (!out?.success) {
+      console.log('TURNSTILE_FAIL /auth/guest', JSON.stringify(out))
+      return c.json({ error: 'turnstile_failed' }, 403)
+    }
+  }
+  const token = await signJwt(c.env, 'guest', 'guest', '10m')
+  return c.json({ token, expires_in: 600 })
+})
 
-app.all('*', (c) => c.json({ error: 'Not Found' }, 404));
-export default app;
+// ---------- Files ----------
+app.post('/v1/files/upload', requireAuth, (REQUIRE_TS_UPLOAD ? requireTurnstile : async (_c,_n)=>{}), async (c) => {
+  const form = await c.req.formData().catch(() => null)
+  const f = form?.get('file') as File | null
+  if (!f) return c.json({ error: 'missing_file' }, 400)
+  const now = Date.now()
+  const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const key = `up/${now}_${safeName}`
+  const put = await c.env.FILES.put(key, await f.arrayBuffer())
+  return c.json({ key, etag: put?.etag })
+})
 
+// ---------- Credits ----------
+app.get('/v1/credits', requireAuth, async (c) => {
+  try {
+    const raw = await c.env.CREDITS.get('balance')
+    const balance = raw ? Number(raw) : 1000
+    return c.json({ balance })
+  } catch {
+    return c.json({ balance: 1000 })
+  }
+})
 
+// ---------- Stubs ----------
+app.post('/v1/text/ask', requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const prompt = body?.prompt ?? ''
+  return c.json({ ok: true, mode: 'client-llm', prompt })
+})
 
+app.post('/v1/interview/start', requireAuth, async (_c) => {
+  return _c.json({ sid: (crypto as any).randomUUID() })
+})
 
-
-
-
-
-
-
-
+export default app
