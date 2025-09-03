@@ -23,7 +23,7 @@ const corsOptions = {
     return false;
   },
   allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Authorization', 'Content-Type'],
+  allowHeaders: ["Authorization","Content-Type","CF-Turnstile-Token"],
   maxAge: 86400,
 };
 app.use('*', cors({
@@ -35,7 +35,7 @@ app.use('*', cors({
     ];
     return allow.some(re => re.test(origin)) ? origin : '';
   },
-  allowHeaders: ['Authorization', 'Content-Type'],
+  allowHeaders: ["Authorization","Content-Type","CF-Turnstile-Token"],
   allowMethods: ['GET', 'POST', 'OPTIONS'],
   maxAge: 86400,
 }));
@@ -90,7 +90,53 @@ app.get('/v1/credits', auth, rateLimit(60, 60), async (c) => {
   return c.json({ balance: 1000 });
 });
 
+app.post('/auth/guest', async (c) => {
+  // Require Turnstile to mint a guest JWT
+  if (!c.env.TURNSTILE_SECRET) return c.json({ error: 'turnstile_not_configured' }, 500);
+  const tsToken = c.req.header('CF-Turnstile-Token') || '';
+  if (!tsToken) return c.json({ error: 'missing_turnstile' }, 400);
+  // Verify Turnstile
+  const ip = c.req.header('CF-Connecting-IP') || '';
+  const resp = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    body: new URLSearchParams({
+      secret: c.env.TURNSTILE_SECRET,
+      response: tsToken,
+      remoteip: ip,
+    }),
+  });
+  const out = await resp.json();
+  if (!out.success) return c.json({ error: 'turnstile_failed' }, 403);
+
+  // Mint 5-min JWT
+  const now = Math.floor(Date.now() / 1000);
+  const sub = 'guest:' + crypto.randomUUID();
+  const token = await new jose.SignJWT({ role: 'guest' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(c.env.JWT_ISS)
+    .setAudience(c.env.JWT_AUD)
+    .setSubject(sub)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 300) // 5 minutes
+    .sign(new TextEncoder().encode(c.env.JWT_SECRET!));
+
+  return c.json({ token, expires_in: 300 });
+});
+
 app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
+  // Turnstile (optional, enforced if secret is set)
+  if (c.env.TURNSTILE_SECRET) {
+    const tsToken = c.req.header('CF-Turnstile-Token') || '';
+    if (!tsToken) return c.json({ error: 'missing_turnstile' }, 400);
+    const ip = c.req.header('CF-Connecting-IP') || '';
+    const chk = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: new URLSearchParams({ secret: c.env.TURNSTILE_SECRET, response: tsToken, remoteip: ip }),
+    });
+    const out = await chk.json();
+    if (!out.success) return c.json({ error: 'turnstile_failed' }, 403);
+  }
+
   const ct = c.req.header('content-type') || '';
   if (!ct.startsWith('multipart/form-data')) return c.text('Bad Request', 400);
   const form = await c.req.parseBody();
@@ -103,6 +149,8 @@ app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
 
 app.all('*', (c) => c.json({ error: 'Not Found' }, 404));
 export default app;
+
+
 
 
 
