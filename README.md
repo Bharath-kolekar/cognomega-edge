@@ -22,3 +22,5 @@ npm run build
 wrangler pages project create cognomega-frontend --production-branch main
 wrangler pages deploy dist
 ```
+
+See **OPS.md** for the production runbook.
