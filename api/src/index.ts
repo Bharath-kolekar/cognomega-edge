@@ -28,10 +28,12 @@ const corsOptions = {
 };
 app.use('*', cors({
   origin: (origin) => {
-    // no CORS for direct curl/no-origin requests
     if (!origin) return '';
-    const ok = /^https:\/\/([a-z0-9-]+\.)?cognomega-frontend\.pages\.dev$/.test(origin);
-    return ok ? origin : '';
+    const allow = [
+      /^https:\/\/([a-z0-9-]+\.)?cognomega-frontend\.pages\.dev$/,
+      /^https:\/\/app\.cognomega\.com$/
+    ];
+    return allow.some(re => re.test(origin)) ? origin : '';
   },
   allowHeaders: ['Authorization', 'Content-Type'],
   allowMethods: ['GET', 'POST', 'OPTIONS'],
@@ -95,6 +97,7 @@ app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
 
 app.all('*', (c) => c.json({ error: 'Not Found' }, 404));
 export default app;
+
 
 
 
