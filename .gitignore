@@ -1,0 +1,10 @@
+# --- frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.env.production
+
+# --- api ---
+api/node_modules/
+
+# local backups / misc
+ruleset-backup.json
