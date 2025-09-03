@@ -45,6 +45,12 @@ app.use('*', async (c, next) => {
   await next();
   c.header('X-Request-ID', id);
   c.header('Cache-Control', 'no-store');
+  // Security headers (global)
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'no-referrer');
+  c.header('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
 });
 
 const rateLimit = (limit: number, windowSec: number) => createMiddleware(async (c, next) => {
@@ -97,6 +103,7 @@ app.post('/v1/files/upload', auth, rateLimit(30, 60), async (c) => {
 
 app.all('*', (c) => c.json({ error: 'Not Found' }, 404));
 export default app;
+
 
 
 
