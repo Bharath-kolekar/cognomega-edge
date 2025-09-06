@@ -39,7 +39,6 @@ export default function SpecForm() {
 
     if (auto && !didAutoRun.current) {
       didAutoRun.current = true;
-      // Run after state updates flush
       setTimeout(() => { void handleGenerate(); }, 0);
     }
   }, []);
@@ -47,10 +46,7 @@ export default function SpecForm() {
   return (
     <form
       className="flex flex-col gap-2 p-3 bg-white border rounded-xl"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void handleGenerate();
-      }}
+      onSubmit={(e) => { e.preventDefault(); void handleGenerate(); }}
     >
       <div className="font-semibold">Specification</div>
       <label className="text-sm">App name</label>
