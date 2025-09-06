@@ -1,0 +1,21 @@
+HTTP/1.1 200 OK
+Date: Sat, 06 Sep 2025 02:23:51 GMT
+Content-Type: text/markdown; charset=utf-8
+Content-Length: 85
+Connection: keep-alive
+Access-Control-Allow-Origin: https://app.cognomega.com
+Cache-Control: no-store
+Content-Disposition: attachment; filename="README.md"
+Vary: Origin, accept-encoding
+access-control-expose-headers: content-type,content-disposition,x-credits-used,x-credits-balance,x-request-id
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=N2Tbu5whhAmFAN0MypDnmRszI2GhtL48%2FE4QUjWan9RklShCYLuDtaZc2nrcKUxl15r0ayv9schXc02aPJJ6UWY4mUyc04PXn3deAsgiJ88OqcYfrFrPG1HvKHS5"}]}
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Server: cloudflare
+CF-RAY: 97aa81ae7bce9f70-AMS
+alt-svc: h3=":443"; ma=86400
+
+# Generated App
+This is an initial scaffold derived from your sketch.
+
+Spec (head):
+

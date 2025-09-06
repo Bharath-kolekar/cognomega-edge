@@ -1,16 +1,24 @@
 ﻿name = "cognomega-api"
 main = "src/index.ts"
-compatibility_date = "2024-09-02"
+compatibility_date = "2025-09-03"
 
 [vars]
-JWT_ISS = "cognomega"
-JWT_AUD = "cognomega-clients"
+# Optional: set at deploy-time via wrangler secret put instead.
+# LLM_BASE_URL = "https://your-llm-router.example.com"
+# LLM_COMPLETE_PATH = "/api/v1/llm/complete"
 
-[[kv_namespaces]]
-binding = "CREDITS"
-id = "fbabd2063d3c43c2bba6e8b527d72bb5"
+# If you also want R2 in this worker later:
+# [[r2_buckets]]
+# binding = "R2"
+# bucket_name = "cognomega-prod"
 
+
+[ai]
+binding = "AI"
+
+routes = [{ pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }]
+[triggers]
+crons = ["*/5 * * * *"]
 [[r2_buckets]]
-binding = "FILES"
-bucket_name = "cognomega-files"
-
+binding = "R2"
+bucket_name = "cognomega-prod"
