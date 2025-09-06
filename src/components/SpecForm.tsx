@@ -1,18 +1,29 @@
 import React, { useEffect, useRef, useState } from "react";
-import { z } from "zod";
 import { SpecSchema, generateFromSpec, formatAll } from "../lib/generator";
 import { useAppStore } from "../lib/store";
 
-export default function SpecForm() {
-  const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const initialName  = params.get("name")  ?? "MyApp";
-  const initialPages = params.get("pages") ?? "Home, About, Dashboard";
-  const initialDesc  = params.get("desc")  ?? "";
+function readParams() {
+  try {
+    const u = new URL(window.location.href);
+    const sp = u.searchParams;
+    return {
+      name: sp.get("name") || null,
+      pages: sp.get("pages") || null,
+      desc: sp.get("desc") || null,
+      autogen: sp.get("autogen") === "1",
+    };
+  } catch {
+    return { name: null, pages: null, desc: null, autogen: false };
+  }
+}
 
+export default function SpecForm() {
   const setFiles = useAppStore((s) => s.setFiles);
-  const [name, setName] = useState(initialName);
-  const [pages, setPages] = useState(initialPages);
-  const [desc, setDesc] = useState(initialDesc);
+
+  // Start with defaults; we’ll override in useEffect so even strict mode double-mount is fine.
+  const [name, setName] = useState("MyApp");
+  const [pages, setPages] = useState("Home, About, Dashboard");
+  const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState(false);
   const didAutoRun = useRef(false);
 
@@ -30,20 +41,24 @@ export default function SpecForm() {
     setBusy(false);
   };
 
-  // Autogenerate if ?autogen=1
+  // Prefill and optionally autogenerate on first client render
   useEffect(() => {
-    if (params.get("autogen") === "1" && !didAutoRun.current) {
+    const p = readParams();
+    if (p.name) setName(p.name);
+    if (p.pages) setPages(p.pages);
+    if (p.desc) setDesc(p.desc);
+    if (p.autogen && !didAutoRun.current) {
       didAutoRun.current = true;
       setTimeout(() => { void handleGenerate(); }, 0);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // run once after mount
 
   return (
     <form
       className="flex flex-col gap-2 p-3 bg-white border rounded-xl"
       onSubmit={(e) => { e.preventDefault(); void handleGenerate(); }}
     >
-      <div className="font-semibold">Specification</div>
+      <div className="font-semibold">Specification • v2</div>
       <label className="text-sm">App name</label>
       <input className="border rounded px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} />
       <label className="text-sm">Pages (comma-separated)</label>
