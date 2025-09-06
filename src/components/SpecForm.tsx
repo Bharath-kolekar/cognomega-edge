@@ -4,10 +4,15 @@ import { SpecSchema, generateFromSpec, formatAll } from "../lib/generator";
 import { useAppStore } from "../lib/store";
 
 export default function SpecForm() {
+  const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const initialName  = params.get("name")  ?? "MyApp";
+  const initialPages = params.get("pages") ?? "Home, About, Dashboard";
+  const initialDesc  = params.get("desc")  ?? "";
+
   const setFiles = useAppStore((s) => s.setFiles);
-  const [name, setName] = useState("MyApp");
-  const [pages, setPages] = useState("Home, About, Dashboard");
-  const [desc, setDesc] = useState("");
+  const [name, setName] = useState(initialName);
+  const [pages, setPages] = useState(initialPages);
+  const [desc, setDesc] = useState(initialDesc);
   const [busy, setBusy] = useState(false);
   const didAutoRun = useRef(false);
 
@@ -25,23 +30,13 @@ export default function SpecForm() {
     setBusy(false);
   };
 
-  // Prefill from URL and optionally autogenerate (?name=&pages=&desc=&autogen=1)
+  // Autogenerate if ?autogen=1
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const qpName = params.get("name");
-    const qpPages = params.get("pages");
-    const qpDesc = params.get("desc");
-    const auto = params.get("autogen") === "1";
-
-    if (qpName) setName(qpName);
-    if (qpPages) setPages(qpPages);
-    if (qpDesc) setDesc(qpDesc);
-
-    if (auto && !didAutoRun.current) {
+    if (params.get("autogen") === "1" && !didAutoRun.current) {
       didAutoRun.current = true;
       setTimeout(() => { void handleGenerate(); }, 0);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <form
