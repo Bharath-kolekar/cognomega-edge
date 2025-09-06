@@ -1,0 +1,22 @@
+{
+  "Rules": [
+    {
+      "ID": "logs-transition-60d-expire-120d",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "logs/" },
+      "Transitions": [{ "Days": 60, "StorageClass": "STANDARD_IA" }],
+      "Expiration": { "Days": 120 }
+    },
+    {
+      "ID": "tmp-expire-3d",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "tmp/" },
+      "Expiration": { "Days": 3 }
+    },
+    {
+      "ID": "abort-multipart-2d",
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 2 }
+    }
+  ]
+}

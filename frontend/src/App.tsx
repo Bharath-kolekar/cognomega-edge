@@ -1,36 +1,232 @@
-﻿/* global window */
-import React, { useEffect, useRef, useState } from "react";
+// frontend/src/App.tsx
+import { apiBase } from "./lib/api/apiBase";
+
+/* global window */
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { CreateWebWorkerMLCEngine } from "@mlc-ai/web-llm";
+import CreditPill from "./components/CreditPill";
+import UsageFeed from "./components/UsageFeed";
 
 declare global {
   interface Window { turnstile?: any }
 }
 
-const API_BASE  = (import.meta as any).env.VITE_API_BASE ?? "";
-const TS_SITE   = (import.meta as any).env.VITE_TURNSTILE_SITE_KEY ?? "";
+const TS_SITE = ""; // keep empty unless you wire Turnstile
+const DEFAULT_API = apiBase;
+
+// ---- types for polling UI (mirrors tool page) ----
+type Job = {
+  id: string;
+  status: "queued" | "working" | "done" | "error" | string;
+  progress?: string | number | null;
+};
+type UploadResp =
+  | { ok: true; key: string; size: number; job_id: string; status: string }
+  | { error: string; [k: string]: any };
+
+const POLL_INTERVAL_MS = 1000;
+const POLL_TIMEOUT_MS  = 120_000;
+
+// ---- local prompt capture for UsageFeed matching ----
+const LS_KEY = "cm_usage_prompts";
+const MAX_PROMPTS = 200;
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readPrompts(): { ts: number; text: string }[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
+    const cutoff = Date.now() - MAX_AGE_MS;
+    return arr
+      .filter(p => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff)
+      .slice(-MAX_PROMPTS);
+  } catch {
+    return [];
+  }
+}
+function writePrompts(arr: { ts: number; text: string }[]) {
+  try {
+    const pruned = arr
+      .filter(p => p && typeof p.ts === "number" && typeof p.text === "string")
+      .slice(-MAX_PROMPTS);
+    const s = JSON.stringify(pruned);
+    localStorage.setItem(LS_KEY, s);
+    // Nudge same-tab listeners (StorageEvent normally fires only cross-document)
+    try {
+      const ev = new StorageEvent("storage", { key: LS_KEY, newValue: s });
+      window.dispatchEvent(ev);
+    } catch {
+      window.dispatchEvent(new Event("storage"));
+    }
+  } catch {
+    // ignore
+  }
+}
+function pushPrompt(text: string) {
+  const list = readPrompts();
+  list.push({ ts: Date.now(), text });
+  writePrompts(list);
+}
 
 export default function App() {
-  const [ready, setReady]       = useState(false);
-  const [resp, setResp]         = useState<string>("");
-  const [health, setHealth]     = useState<string>("checking...");
-  const [authMsg, setAuthMsg]   = useState<string>("initializing...");
+  const [ready, setReady]         = useState(false);
+  const [resp, setResp]           = useState<string>("");
+  const [health, setHealth]       = useState<string>("checking...");
+  const [authMsg, setAuthMsg]     = useState<string>("initializing...");
   const [authReady, setAuthReady] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const engineRef   = useRef<any>(null);
+  // Poll/download UI state (copied from tool page)
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [job, setJob]     = useState<Job | null>(null);
+  const [info, setInfo]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Derived status
+  const isDone = job?.status === "done";
+
+  const engineRef     = useRef<any>(null);
   const [prompt, setPrompt] = useState("Summarize Cognomega in one line.");
 
   const fileRef   = useRef<HTMLInputElement | null>(null);
   const tsDivRef  = useRef<HTMLDivElement | null>(null);
   const widRef    = useRef<any>(null);
+  const tsExecRef = useRef<Promise<string>|null>(null);
+  const authBusyRef = useRef(false);
 
   // In-memory JWT & timer
-  const jwtRef         = useRef<string>("");
-  const refreshTimer   = useRef<any>(null);
+  const jwtRef       = useRef<string>("");
+  const refreshTimer = useRef<any>(null);
 
+  // Polling refs
+  const pollAbort = useRef<AbortController | null>(null);
+  const pollTimer = useRef<number | null>(null);
+  const pollStart = useRef<number>(0);
+
+  // ---------- helpers (copied to match tool page) ----------
+  const cleanHeaders = useCallback(() => {
+    // Keep it simple for GETs; never force Content-Type on multipart
+    const h: Record<string, string> = { Accept: "application/json" };
+    return h;
+  }, []);
+
+  const fetchJSON = useCallback(async (url: string) => {
+    const r = await fetch(url, { headers: cleanHeaders() });
+    const ct = r.headers.get("content-type") || "";
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    if (!ct.includes("application/json")) {
+      const t = await r.text();
+      throw new Error(`Unexpected content-type: ${ct} | ${t.slice(0, 160)}`);
+    }
+    return r.json();
+  }, [cleanHeaders]);
+
+  const startPolling = useCallback((id: string) => {
+    // clear previous
+    if (pollAbort.current) pollAbort.current.abort();
+    if (pollTimer.current) window.clearTimeout(pollTimer.current);
+
+    pollAbort.current = new AbortController();
+    pollStart.current = Date.now();
+
+    const loop = async () => {
+      try {
+        if (Date.now() - pollStart.current > POLL_TIMEOUT_MS) {
+          setInfo(null);
+          setError("Timed out waiting for job to finish.");
+          return;
+        }
+
+        const j = await fetchJSON(`${apiBase}/api/jobs/${encodeURIComponent(id)}`);
+        const jobObj = (j?.job ?? {}) as any;
+        const next: Job = {
+          id: jobObj.id,
+          status: (jobObj.status || "").toString(),
+          progress: jobObj.progress,
+        };
+        setJob(next);
+
+        if (next.status === "done") {
+          setInfo("Job finished. You can download the result.");
+          return; // stop polling
+        }
+        if (next.status === "error" || next.status === "failed") {
+          setError("Job failed.");
+          return;
+        }
+
+        pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
+      } catch (e: any) {
+        setError(e?.message || "Poll failed");
+      }
+    };
+
+    loop().catch(() => {});
+  }, [fetchJSON]);
+
+  const onDownload = useCallback(async () => {
+    if (!jobId) return;
+    setError(null);
+    setInfo("Preparing download…");
+    try {
+      const r = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`, {
+        method: "GET",
+        headers: cleanHeaders(),
+      });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+
+      const cd = r.headers.get("content-disposition") || "";
+      const match = cd.match(/filename="([^"]+)"/i);
+      const filename = match?.[1] || `job_${jobId}.bin`;
+
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setInfo("Downloaded.");
+    } catch (e: any) {
+      setError(e?.message || "Download failed");
+    }
+  }, [jobId, cleanHeaders]);
+
+  // cleanup polling when unmounting
+  useEffect(() => {
+    return () => {
+      if (pollAbort.current) pollAbort.current.abort();
+      if (pollTimer.current) window.clearTimeout(pollTimer.current);
+    };
+  }, []);
+
+  // --- NEW: restore & poll if landing with ?job= in URL ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("job");
+    if (id) {
+      setJobId(id);
+      setInfo("Restored job from URL. Polling…");
+      setError(null);
+      startPolling(id);
+    }
+  }, [startPolling]);
+
+  // --- Optional UX: when restored job finishes, hint (or auto-download) ---
+  useEffect(() => {
+    if (jobId && isDone) {
+      setInfo("Job finished. You can download the result.");
+      // onDownload().catch(() => {}); // enable to auto-download
+    }
+  }, [jobId, isDone, onDownload]);
+
+  // ---------- original app boot (health, WebLLM, auth/turnstile) ----------
   useEffect(() => {
     // Health
-    fetch(`${API_BASE}/ready`)
+    fetch(`${DEFAULT_API}/ready`)
       .then(r => r.json())
       .then(j => setHealth(JSON.stringify(j)))
       .catch(() => setHealth("down"));
@@ -43,7 +239,7 @@ export default function App() {
         });
         setReady(true);
       } catch {
-        setResp("WebLLM not available on this browser.");
+        setResp("");
       }
     })();
 
@@ -56,8 +252,10 @@ export default function App() {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
           widRef.current = window.turnstile.render(tsDivRef.current, {
             sitekey: TS_SITE,
-            size: "invisible",
+            appearance: "execute", size: "flexible",
           });
+
+          if (fb) { clearTimeout(fb); fb = null; }
           clearInterval(iv);
           iv = null;
           refreshJwt(); // proceed once widget rendered
@@ -85,21 +283,31 @@ export default function App() {
 
   const getTurnstileToken = async (): Promise<string> => {
     if (!TS_SITE || !window.turnstile || !widRef.current) return "";
-    return await new Promise<string>((resolve) => {
-      window.turnstile.execute(widRef.current, {
-        async: true,
-        action: "guest",
-        callback: (t: string) => resolve(t),
-      });
-    });
+    if (tsExecRef.current) return tsExecRef.current;
+    tsExecRef.current = new Promise<string>((resolve) => {
+      try {
+        try { window.turnstile.reset(widRef.current); } catch {}
+        window.turnstile.execute(widRef.current, {
+          async: true,
+          action: "guest",
+          callback: (t: string) => resolve(t),
+        });
+      } catch {
+        resolve("");
+      }
+    }).finally(() => { tsExecRef.current = null; });
+    return tsExecRef.current;
   };
 
+  // NOTE: removed the VITE_ENABLE_GUEST_AUTH gate — we always fetch a guest token
   const refreshJwt = async () => {
+    if (authBusyRef.current) return;
+    authBusyRef.current = true;
     try {
       setAuthMsg("auth: requesting token...");
       let ts = "";
       try { ts = await getTurnstileToken(); } catch { ts = ""; }
-      const r = await fetch(`${API_BASE}/auth/guest`, {
+      const r = await fetch(`${DEFAULT_API}/auth/guest`, {
         method: "POST",
         headers: ts ? { "CF-Turnstile-Token": ts } : {},
       });
@@ -107,10 +315,8 @@ export default function App() {
       const j = await r.json();
       jwtRef.current = j.token;
       setAuthReady(true);
-      const ttl = Math.max(60, (j.expires_in ?? 600)); // default 10m
+      const ttl = Math.max(60, (j.expires_in ?? 600));
       setAuthMsg(`token ready (exp ${ttl}s)`);
-
-      // Auto-refresh ~60s before expiry
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       const next = Math.max(10, ttl - 60);
       refreshTimer.current = setTimeout(refreshJwt, next * 1000);
@@ -119,48 +325,80 @@ export default function App() {
       setAuthMsg(`auth error: ${msg} – retrying in 30s`);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(refreshJwt, 30000);
+    } finally {
+      authBusyRef.current = false;
     }
   };
 
   const ask = async () => {
-    if (!engineRef.current) return;
-    const reply = await engineRef.current.chat.completions.create({
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-      stream: false,
-    });
-    setResp(reply.choices[0]?.message?.content ?? "");
+    setResp("...");
+    // Capture the prompt locally so UsageFeed can show context immediately
+    if (prompt && prompt.trim()) pushPrompt(prompt.trim());
+
+    try {
+      const r = await fetch(DEFAULT_API + "/api/si/ask", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user-email": "vihaan@cognomega.com" },
+        body: JSON.stringify({ skill: "summarize", input: prompt })
+      });
+      const j = await r.json();
+      const used = r.headers.get("X-Credits-Used") || "";
+      const bal  = r.headers.get("X-Credits-Balance") || "";
+      setResp((j.result?.content ?? JSON.stringify(j)) + (used ? "\n\n[used: " + used + " | balance: " + bal + "]" : ""));
+    } catch (e: any) {
+      setResp("Error: " + (e?.message ?? String(e)));
+    }
   };
 
+  // ---------- new upload that mirrors tool page & redirects ----------
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
     if (!authReady || !jwtRef.current) return alert("Still obtaining auth… try again in a moment.");
     setUploading(true);
+    setError(null);
+    setInfo("Uploading…");
+    setJob(null);
+    setJobId(null);
+
     try {
       const fd = new FormData();
       fd.append("file", f);
       let ts = "";
       try { ts = await getTurnstileToken(); } catch { ts = ""; }
 
-      const r = await fetch(`${API_BASE}/v1/files/upload`, {
+      const r = await fetch(`${apiBase}/v1/files/upload`, {
         method: "POST",
         headers: {
+          // DO NOT set Content-Type for multipart
           Authorization: `Bearer ${jwtRef.current}`,
           ...(ts ? { "CF-Turnstile-Token": ts } : {}),
         },
         body: fd,
       });
 
-      if (!r.ok) {
-        const txt = await r.text();
-        if (r.status === 401) { setResp("Upload error: 401 Unauthorized (JWT expired)"); return; }
-        if (r.status === 403 && txt.includes("turnstile_failed")) { setResp("Upload error: 403 Turnstile failed/expired"); return; }
-        setResp(`Upload error: ${r.status} ${txt}`);
-        return;
+      const ct = r.headers.get("content-type") || "";
+      if (!ct.includes("application/json")) {
+        const text = await r.text();
+        throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
       }
-      const j = await r.json();
-      setResp(JSON.stringify(j));
+
+      const j: UploadResp = await r.json();
+      if (!r.ok || (j as any).error) {
+        const msg = (j as any).error ? String((j as any).error) : `${r.status} ${r.statusText}`;
+        throw new Error(msg);
+      }
+
+      const ok = j as Extract<UploadResp, { ok: true }>;
+      setJobId(ok.job_id);
+      setInfo("Uploaded. Processing…");
+
+      // Start polling here as a fallback (in case navigation is blocked)
+      startPolling(ok.job_id);
+
+      // Navigate users to the tool page to continue UX there
+      const q = new URLSearchParams({ job: ok.job_id }).toString();
+      window.location.assign(`/tools/sketch-to-app?${q}`);
     } catch (e: any) {
       const msg = (e?.message || e)?.toString?.() || "";
       if (msg.toLowerCase().includes("failed to fetch")) {
@@ -168,14 +406,22 @@ export default function App() {
       } else {
         setResp(`Upload error: ${msg}`);
       }
+      setError(msg);
     } finally {
       setUploading(false);
     }
   };
 
+  // ---------- UI ----------
   return (
     <div style={{ maxWidth: 820, margin: "40px auto", fontFamily: "system-ui" }}>
-      <h1>Cognomega</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <h1 style={{ margin: 0 }}>Cognomega</h1>
+        <div style={{ marginLeft: "auto" }}>
+          <CreditPill email="vihaan@cognomega.com" apiBase={DEFAULT_API} />
+        </div>
+      </div>
+
       <p>API readiness: {health}</p>
       <p>Auth: {authMsg}</p>
 
@@ -185,7 +431,7 @@ export default function App() {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <button onClick={ask} disabled={!ready}>
+        <button onClick={ask}>
           Ask
         </button>
       </div>
@@ -201,6 +447,7 @@ export default function App() {
       >
         {resp}
       </pre>
+      <UsageFeed email="vihaan@cognomega.com" apiBase={DEFAULT_API}  refreshMs={3000} />
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -210,6 +457,39 @@ export default function App() {
           {uploading ? "Uploading..." : "Upload"}
         </button>
       </div>
+
+      {/* Lightweight status block (useful if navigation is blocked) */}
+      {(jobId || job || error || info) && (
+        <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 8, background: "#fafafa" }}>
+          {jobId && (
+            <div style={{ fontSize: 12, color: "#555", marginBottom: 6 }}>
+              Job: <code style={{ fontSize: 11 }}>{jobId}</code>
+            </div>
+          )}
+          {job && (
+            <>
+              <div style={{ fontSize: 14 }}>
+                <strong>Status:</strong> {job.status}
+                {typeof job.progress !== "undefined" && job.progress !== null && (
+                  <> — {String(job.progress)}%</>
+                )}
+              </div>
+              {isDone && (
+                <div style={{ paddingTop: 8 }}>
+                  <button
+                    onClick={onDownload}
+                    style={{ padding: "8px 12px", borderRadius: 6, background: "#16a34a", color: "#fff", border: 0 }}
+                  >
+                    Download result
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
+          {error && <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>Error: {error}</div>}
+        </div>
+      )}
 
       {/* Invisible Turnstile container */}
       <div ref={tsDivRef} />

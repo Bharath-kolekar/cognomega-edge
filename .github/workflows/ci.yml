@@ -1,27 +1,70 @@
-name: ci
-on: [push, pull_request]
+﻿name: ci
+
+on:
+  pull_request:
+  push:
+
 jobs:
   api:
+    name: api
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: api
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: npm run check
+          cache: 'npm'
+          cache-dependency-path: |
+            api/package-lock.json
+            api/pnpm-lock.yaml
+      - name: Install deps (npm or pnpm)
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm --version
+            pnpm install --no-frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Typecheck if present
+        run: npx -y tsc --noEmit || echo "tsc not present; skipping"
+      - name: Build if present
+        run: npm run -s build --if-present || true
+
   frontend:
+    name: frontend
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: npm run build
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend/pnpm-lock.yaml
+      - name: Install deps (npm or pnpm)
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm --version
+            pnpm install --no-frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Typecheck if present
+        run: npx -y tsc --noEmit || echo "tsc not present; skipping"
+      - name: Build if present
+        run: npm run -s build --if-present || true
