@@ -2,7 +2,7 @@
 import { createRoot } from "react-dom/client";
 
 // ✅ this line was missing
-import "./index.css";   // or "./styles.css" if that's your file
+//import "./index.css";   // or "./styles.css" if that's your file
 
 import RouterGate from "./RouterGate";
 
