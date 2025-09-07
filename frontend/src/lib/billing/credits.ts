@@ -1,4 +1,4 @@
-import { apiBase } from "../lib/api/apiBase";
+﻿import { apiBase } from "../api/apiBase";
 
 export async function fetchCreditBalance(): Promise<number|null> {
   try {
@@ -13,7 +13,7 @@ export async function fetchCreditBalance(): Promise<number|null> {
       const n = Number(hdr);
       if (Number.isFinite(n)) return n;
     }
-    // No header? Gracefully return null (pill shows "—")
+    // No header? Gracefully return null (pill shows "â€”")
     return null;
   } catch {
     return null;
