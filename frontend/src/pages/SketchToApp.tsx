@@ -1,16 +1,7 @@
 ﻿// frontend/src/pages/SketchToApp.tsx
-import React, {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  lazy,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, authHeaders } from "../lib/api/apiBase";
-// Lazy-load the panel so the main page paints faster
-const LaunchInBuilder = lazy(() => import("../components/LaunchInBuilder"));
+import LaunchInBuilder from "../components/LaunchInBuilder";
 
 type Job = {
   id: string;
@@ -25,6 +16,12 @@ type UploadResp =
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
 
+// A tiny utility to keep form controls tidy
+const inputCls =
+  "w-full rounded-xl border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+const cardCls =
+  "rounded-2xl border border-slate-200 bg-white shadow-sm";
+
 export default function SketchToApp() {
   const [file, setFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -35,15 +32,11 @@ export default function SketchToApp() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  // polling control
   const pollAbort = useRef<AbortController | null>(null);
   const pollTimer = useRef<number | null>(null);
   const pollStart = useRef<number>(0);
 
-  // ---------- helpers ----------
-
   const cleanHeaders = useCallback((): Record<string, string> => {
-    // Use auth headers, but DO NOT set Content-Type for multipart/form-data
     const h: Record<string, string> = {
       Accept: "application/json",
       ...(authHeaders() as any),
@@ -72,9 +65,7 @@ export default function SketchToApp() {
     if (pollAbort.current) {
       try {
         pollAbort.current.abort();
-      } catch {
-        /* no-op */
-      }
+      } catch {}
     }
     pollAbort.current = null;
     if (pollTimer.current) {
@@ -85,21 +76,18 @@ export default function SketchToApp() {
 
   const startPolling = useCallback(
     (id: string) => {
-      // reset previous loop (if any)
       stopPolling();
       pollAbort.current = new AbortController();
       pollStart.current = Date.now();
 
       const loop = async () => {
         try {
-          // stop if timed out
           if (Date.now() - pollStart.current > POLL_TIMEOUT_MS) {
             setInfo(null);
             setError("Timed out waiting for job to finish.");
             stopPolling();
             return;
           }
-
           const j = await fetchJSON(
             `${apiBase}/api/jobs/${encodeURIComponent(id)}`,
             pollAbort.current?.signal
@@ -123,13 +111,9 @@ export default function SketchToApp() {
             return;
           }
 
-          // schedule next tick
           pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
         } catch (e: any) {
-          // if aborted, just stop
           if (pollAbort.current?.signal.aborted) return;
-
-          // transient failure: retry within the timeout window
           if (Date.now() - pollStart.current <= POLL_TIMEOUT_MS) {
             setInfo("Reconnecting…");
             pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
@@ -141,7 +125,6 @@ export default function SketchToApp() {
         }
       };
 
-      // kick off
       void loop();
     },
     [fetchJSON, stopPolling]
@@ -162,16 +145,14 @@ export default function SketchToApp() {
 
         const r = await fetch(`${apiBase}/v1/files/upload`, {
           method: "POST",
-          headers: cleanHeaders(), // never set content-type here
+          headers: cleanHeaders(), // do NOT set content-type here
           body: form,
         });
 
         const ct = r.headers.get("content-type") || "";
         if (!ct.toLowerCase().includes("application/json")) {
           const text = await r.text();
-          throw new Error(
-            `Unexpected content-type: ${ct} | ${text.slice(0, 160)}`
-          );
+          throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
         }
 
         const j: UploadResp = await r.json();
@@ -204,8 +185,7 @@ export default function SketchToApp() {
       const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
       setFile(f);
       if (f) {
-        // AUTO-START upload to match current UI (“no Create Job” button)
-        void upload(f);
+        void upload(f); // auto-start
       }
     },
     [upload]
@@ -238,103 +218,122 @@ export default function SketchToApp() {
 
       setInfo("Downloaded.");
     } catch (e: any) {
-      // if user navigated away mid-download, don't overwrite UI with an error
       if (!pollAbort.current?.signal.aborted) {
         setError(e?.message || "Download failed");
       }
     }
   }, [jobId, cleanHeaders]);
 
-  // cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, [stopPolling]);
+  useEffect(() => () => stopPolling(), [stopPolling]);
 
   const isDone = job?.status === "done";
-  const canManualUpload = useMemo(() => !!file && !busy, [file, busy]); // optional manual button
+  const canManualUpload = useMemo(() => !!file && !busy, [file, busy]);
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Sketch → App</h1>
+    <div className="min-h-screen bg-slate-50">
+      <header className="border-b bg-white">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="text-xl font-semibold tracking-tight">Cognomega</div>
+        </div>
+      </header>
 
-      <div className="space-y-3">
-        <label className="block text-sm font-medium">Sketch file</label>
-        <input
-          type="file"
-          accept=".png,.jpg,.jpeg,.webp,.pdf,.gif"
-          onChange={onChooseFile}
-          className="block w-full"
-        />
-        <p className="text-xs text-gray-500">
-          Upload starts automatically once you pick a file.
-        </p>
-      </div>
+      <main className="max-w-4xl mx-auto p-6 space-y-6">
+        <div className={`${cardCls} p-6`}>
+          <div className="flex items-start justify-between gap-4">
+            <h1 className="text-2xl font-semibold">Sketch → App</h1>
+            {job?.status && (
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                  isDone
+                    ? "bg-green-100 text-green-700"
+                    : job?.status === "error" || job?.status === "failed"
+                    ? "bg-rose-100 text-rose-700"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {job.status}
+                {typeof job.progress !== "undefined" &&
+                  job.progress !== null &&
+                  ` • ${String(job.progress)}%`}
+              </span>
+            )}
+          </div>
 
-      <div className="space-y-3">
-        <label className="block text-sm font-medium">Prompt (optional)</label>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={3}
-          className="w-full border rounded p-2"
-          placeholder="Add any notes about the UI or behavior…"
-        />
-      </div>
+          <div className="mt-6 grid gap-5">
+            <div>
+              <label className="block text-sm font-medium mb-1">Sketch file</label>
+              <input
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp,.pdf,.gif"
+                onChange={onChooseFile}
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Upload starts automatically once you pick a file.
+              </p>
+            </div>
 
-      {/* Optional manual button for power users; harmless if ignored */}
-      <div className="flex items-center gap-3">
-        <button
-          disabled={!canManualUpload}
-          onClick={() => file && upload(file)}
-          className={`px-4 py-2 rounded text-white ${
-            canManualUpload ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
-          }`}
-        >
-          {busy ? "Uploading…" : "Upload"}
-        </button>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Prompt <span className="text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={3}
+                placeholder="Add any notes about the UI or behavior…"
+                className={inputCls}
+              />
+            </div>
 
-        {jobId && (
-          <span className="text-sm text-gray-600">
-            Job: <code className="text-xs">{jobId}</code>
-          </span>
-        )}
-      </div>
+            <div className="flex items-center gap-3">
+              <button
+                disabled={!canManualUpload}
+                onClick={() => file && upload(file)}
+                className={`rounded-xl px-4 py-2 text-white transition ${
+                  canManualUpload
+                    ? "bg-indigo-600 hover:bg-indigo-700"
+                    : "bg-slate-400 cursor-not-allowed"
+                }`}
+              >
+                {busy ? "Uploading…" : "Upload"}
+              </button>
 
-      {(job || error || info) && (
-        <div className="rounded border p-3 bg-gray-50 space-y-1">
-          {job && (
-            <>
-              <div className="text-sm">
-                <span className="font-medium">Status:</span> {job.status}
-                {typeof job.progress !== "undefined" && job.progress !== null && (
-                  <> — {String(job.progress)}%</>
+              {jobId && (
+                <span className="text-sm text-slate-600">
+                  Job: <code className="text-xs">{jobId}</code>
+                </span>
+              )}
+            </div>
+
+            {(job || error || info) && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm space-y-2">
+                {info && <div className="text-slate-700">{info}</div>}
+                {error && <div className="text-rose-600">Error: {error}</div>}
+                {isDone && (
+                  <div className="pt-2">
+                    <button
+                      onClick={onDownload}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
+                    >
+                      Download result
+                    </button>
+                  </div>
                 )}
               </div>
-              {isDone && (
-                <div className="pt-2">
-                  <button
-                    onClick={onDownload}
-                    className="px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700"
-                  >
-                    Download result
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          {info && <div className="text-sm text-gray-700">{info}</div>}
-          {error && <div className="text-sm text-red-600">Error: {error}</div>}
+            )}
+          </div>
         </div>
-      )}
 
-      {/* Realtime App Builder launcher (native, lazy) */}
-      <div className="border-t pt-4">
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading builder launcher…</div>}>
-          <LaunchInBuilder />
-        </Suspense>
-      </div>
+        {/* Realtime App Builder launcher */}
+        <div className={`${cardCls} p-6`}>
+          <LaunchInBuilder
+            defaultName="Sketch Prototype"
+            defaultPages="Home,Dashboard,Chat"
+            defaultDesc={prompt || "From Sketch to App"}
+          />
+        </div>
+      </main>
     </div>
   );
 }

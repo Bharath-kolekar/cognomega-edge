@@ -1,0 +1,9 @@
+﻿@import "tailwindcss";
+
+/* minimal base so it looks nice even before custom styles */
+html, body { height: 100%; }
+body {
+  background: #ffffff;
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans";
+}
