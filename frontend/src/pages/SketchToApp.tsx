@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, authHeaders } from "../lib/api/apiBase";
 import LaunchInBuilder from "../components/LaunchInBuilder";
+import "../index.css";
 
 type Job = {
   id: string;
@@ -16,11 +17,120 @@ type UploadResp =
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
 
-// A tiny utility to keep form controls tidy
+// ---- Auth bootstrap & header helpers ---------------------------------------
+
+const KEY_GUEST = "guest_token";      // what apiBase.ts reads
+const KEY_JWT   = "jwt";              // legacy key some helpers use
+const KEY_COG   = "cog_auth_jwt";     // richer record { token, exp? }
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+function readAnyToken(): string | null {
+  try {
+    const guest = localStorage.getItem(KEY_GUEST);
+    if (guest && guest.trim()) return guest;
+    const legacy = localStorage.getItem(KEY_JWT);
+    if (legacy && legacy.trim()) return legacy;
+    const raw = localStorage.getItem(KEY_COG);
+    if (raw) {
+      try {
+        const j = JSON.parse(raw);
+        if (j && typeof j.token === "string" && j.token.trim()) return j.token;
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function writeAllTokens(token: string, exp?: number) {
+  try {
+    localStorage.setItem(KEY_GUEST, token);                 // primary for apiBase.ts
+    localStorage.setItem(KEY_JWT, token);                   // legacy mirror
+    localStorage.setItem(KEY_COG, JSON.stringify({ token, exp }));
+  } catch {}
+}
+
+/** Try to mint a guest token from the API and persist it. */
+async function mintGuestToken(): Promise<string | null> {
+  const candidates: Array<{ url: string; method: "GET" | "POST" }> = [
+    { url: `${apiBase}/auth/guest`, method: "GET" },
+    { url: `${apiBase}/auth/guest`, method: "POST" },
+    { url: `${apiBase}/api/auth/guest`, method: "GET" },
+    { url: `${apiBase}/api/auth/guest`, method: "POST" },
+  ];
+
+  let lastErr: unknown = null;
+
+  for (const c of candidates) {
+    try {
+      const init: RequestInit = {
+        method: c.method,
+        headers: { Accept: "application/json" },
+      };
+      if (c.method === "POST") {
+        init.headers = { ...init.headers, "Content-Type": "application/json" };
+        init.body = "{}";
+      }
+      const r = await fetch(c.url, init);
+      if (!r.ok) {
+        lastErr = new Error(`${r.status} ${r.statusText}`);
+        continue;
+      }
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      const data = ct.includes("application/json") ? await r.json() : await r.text();
+
+      const token =
+        (typeof data === "string" ? data : data?.token || data?.jwt || data?.guest_token) || null;
+      const exp = typeof data === "object" ? Number(data?.exp) : undefined;
+
+      if (token && String(token).trim()) {
+        writeAllTokens(String(token).trim(), exp || nowSec() + 3600);
+        return String(token).trim();
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  // Surface nothing here; callers can decide to retry.
+  console.debug("mintGuestToken failed", lastErr);
+  return null;
+}
+
+/**
+ * Ensure there is a token in storage. If `force` is true, always mint a fresh one.
+ * We don’t try to validate exp on the guest token unless provided; we simply ensure presence.
+ */
+async function ensureAuthToken(force = false): Promise<string | null> {
+  if (!force) {
+    const t = readAnyToken();
+    if (t) return t;
+  }
+  return await mintGuestToken();
+}
+
+/** Build headers; do NOT set content-type for multipart. */
+function makeHeaders(): Record<string, string> {
+  const base = authHeaders() as Record<string, string>;
+  const h: Record<string, string> = { Accept: "application/json", ...base };
+
+  // If authHeaders() didn’t inject Authorization (e.g., first-load race), add it.
+  if (!("Authorization" in h)) {
+    const tok = readAnyToken();
+    if (tok) h["Authorization"] = `Bearer ${tok}`;
+  }
+
+  // Never pre-set content-type for multipart/form-data
+  for (const k of Object.keys(h)) if (k.toLowerCase() === "content-type") delete h[k];
+  return h;
+}
+
+// ---- UI helpers -------------------------------------------------------------
+
 const inputCls =
   "w-full rounded-xl border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
-const cardCls =
-  "rounded-2xl border border-slate-200 bg-white shadow-sm";
+const cardCls = "rounded-2xl border border-slate-200 bg-white shadow-sm";
+
+// ----------------------------------------------------------------------------
 
 export default function SketchToApp() {
   const [file, setFile] = useState<File | null>(null);
@@ -36,20 +146,15 @@ export default function SketchToApp() {
   const pollTimer = useRef<number | null>(null);
   const pollStart = useRef<number>(0);
 
-  const cleanHeaders = useCallback((): Record<string, string> => {
-    const h: Record<string, string> = {
-      Accept: "application/json",
-      ...(authHeaders() as any),
-    };
-    for (const k of Object.keys(h)) {
-      if (k.toLowerCase() === "content-type") delete h[k];
-    }
-    return h;
+  // Kick off auth at mount so first action doesn't 401
+  useEffect(() => {
+    void ensureAuthToken();
   }, []);
 
   const fetchJSON = useCallback(
     async (url: string, signal?: AbortSignal) => {
-      const r = await fetch(url, { headers: cleanHeaders(), signal });
+      await ensureAuthToken();
+      const r = await fetch(url, { headers: makeHeaders(), signal });
       const ct = r.headers.get("content-type") || "";
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       if (!ct.toLowerCase().includes("application/json")) {
@@ -58,7 +163,7 @@ export default function SketchToApp() {
       }
       return r.json();
     },
-    [cleanHeaders]
+    []
   );
 
   const stopPolling = useCallback(() => {
@@ -138,16 +243,28 @@ export default function SketchToApp() {
       setJob(null);
       setJobId(null);
 
-      try {
+      const doPost = async () => {
+        await ensureAuthToken();
         const form = new FormData();
         form.append("file", f);
         form.append("prompt", prompt);
 
         const r = await fetch(`${apiBase}/v1/files/upload`, {
           method: "POST",
-          headers: cleanHeaders(), // do NOT set content-type here
+          headers: makeHeaders(), // DO NOT set content-type here
           body: form,
         });
+        return r;
+      };
+
+      try {
+        let r = await doPost();
+
+        // If unauthorized, mint a fresh guest token and retry once
+        if (r.status === 401 || r.status === 403) {
+          await ensureAuthToken(true);
+          r = await doPost();
+        }
 
         const ct = r.headers.get("content-type") || "";
         if (!ct.toLowerCase().includes("application/json")) {
@@ -173,7 +290,7 @@ export default function SketchToApp() {
         setBusy(false);
       }
     },
-    [prompt, cleanHeaders, startPolling]
+    [prompt, startPolling]
   );
 
   const onChooseFile = useCallback(
@@ -196,10 +313,20 @@ export default function SketchToApp() {
     setError(null);
     setInfo("Preparing download…");
     try {
-      const r = await fetch(
+      await ensureAuthToken();
+      let r = await fetch(
         `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`,
-        { method: "GET", headers: cleanHeaders(), signal: pollAbort.current?.signal }
+        { method: "GET", headers: makeHeaders(), signal: pollAbort.current?.signal }
       );
+
+      if (r.status === 401 || r.status === 403) {
+        await ensureAuthToken(true);
+        r = await fetch(
+          `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`,
+          { method: "GET", headers: makeHeaders(), signal: pollAbort.current?.signal }
+        );
+      }
+
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
 
       const cd = r.headers.get("content-disposition") || "";
@@ -222,7 +349,7 @@ export default function SketchToApp() {
         setError(e?.message || "Download failed");
       }
     }
-  }, [jobId, cleanHeaders]);
+  }, [jobId]);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
