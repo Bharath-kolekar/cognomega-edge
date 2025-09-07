@@ -1,6 +1,16 @@
-// frontend/src/pages/SketchToApp.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿// frontend/src/pages/SketchToApp.tsx
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  lazy,
+} from "react";
 import { apiBase, authHeaders } from "../lib/api/apiBase";
+// Lazy-load the panel so the main page paints faster
+const LaunchInBuilder = lazy(() => import("../components/LaunchInBuilder"));
 
 type Job = {
   id: string;
@@ -12,8 +22,8 @@ type UploadResp =
   | { ok: true; key: string; size: number; job_id: string; status: string }
   | { error: string; [k: string]: any };
 
-const POLL_INTERVAL_MS = 1000;      // poll every 1s
-const POLL_TIMEOUT_MS  = 120_000;   // give up after 2 minutes
+const POLL_INTERVAL_MS = 1000;
+const POLL_TIMEOUT_MS = 120_000;
 
 export default function SketchToApp() {
   const [file, setFile] = useState<File | null>(null);
@@ -34,7 +44,10 @@ export default function SketchToApp() {
 
   const cleanHeaders = useCallback((): Record<string, string> => {
     // Use auth headers, but DO NOT set Content-Type for multipart/form-data
-    const h: Record<string, string> = { Accept: "application/json", ...(authHeaders() as any) };
+    const h: Record<string, string> = {
+      Accept: "application/json",
+      ...(authHeaders() as any),
+    };
     for (const k of Object.keys(h)) {
       if (k.toLowerCase() === "content-type") delete h[k];
     }
@@ -57,7 +70,11 @@ export default function SketchToApp() {
 
   const stopPolling = useCallback(() => {
     if (pollAbort.current) {
-      try { pollAbort.current.abort(); } catch { /* no-op */ }
+      try {
+        pollAbort.current.abort();
+      } catch {
+        /* no-op */
+      }
     }
     pollAbort.current = null;
     if (pollTimer.current) {
@@ -90,7 +107,7 @@ export default function SketchToApp() {
           const jobObj = (j?.job ?? {}) as any;
           const next: Job = {
             id: jobObj.id,
-            status: (jobObj.status || "").toString(),
+            status: String(jobObj.status || ""),
             progress: jobObj.progress,
           };
           setJob(next);
@@ -127,7 +144,7 @@ export default function SketchToApp() {
       // kick off
       void loop();
     },
-    [apiBase, fetchJSON, stopPolling]
+    [fetchJSON, stopPolling]
   );
 
   const upload = useCallback(
@@ -152,12 +169,16 @@ export default function SketchToApp() {
         const ct = r.headers.get("content-type") || "";
         if (!ct.toLowerCase().includes("application/json")) {
           const text = await r.text();
-          throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
+          throw new Error(
+            `Unexpected content-type: ${ct} | ${text.slice(0, 160)}`
+          );
         }
 
         const j: UploadResp = await r.json();
         if (!r.ok || (j as any).error) {
-          const msg = (j as any).error ? String((j as any).error) : `${r.status} ${r.statusText}`;
+          const msg = (j as any).error
+            ? String((j as any).error)
+            : `${r.status} ${r.statusText}`;
           throw new Error(msg);
         }
 
@@ -171,7 +192,7 @@ export default function SketchToApp() {
         setBusy(false);
       }
     },
-    [apiBase, prompt, cleanHeaders, startPolling]
+    [prompt, cleanHeaders, startPolling]
   );
 
   const onChooseFile = useCallback(
@@ -222,7 +243,7 @@ export default function SketchToApp() {
         setError(e?.message || "Download failed");
       }
     }
-  }, [apiBase, jobId, cleanHeaders]);
+  }, [jobId, cleanHeaders]);
 
   // cleanup polling on unmount
   useEffect(() => {
@@ -307,6 +328,13 @@ export default function SketchToApp() {
           {error && <div className="text-sm text-red-600">Error: {error}</div>}
         </div>
       )}
+
+      {/* Realtime App Builder launcher (native, lazy) */}
+      <div className="border-t pt-4">
+        <Suspense fallback={<div className="text-sm text-gray-500">Loading builder launcher…</div>}>
+          <LaunchInBuilder />
+        </Suspense>
+      </div>
     </div>
   );
 }
