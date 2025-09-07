@@ -1,25 +1,11 @@
-﻿// frontend/src/main.tsx
-import "./index.css";
-import React from "react";
-import { createRoot } from "react-dom/client";
+// frontend/src/lib/auth/guest.ts
+import { apiBase } from "../api/apiBase";
 
-import RouterGate from "./RouterGate";
-import { apiBase } from "./lib/api/apiBase";
-
-// --- Minimal guest-auth bootstrap (no external deps) -------------------------
 const TOKEN_KEY = "cog_auth_jwt"; // { token, exp }
-const LEGACY_KEY = "jwt";         // some codepaths still read this
-const GUEST_KEY  = "guest_token"; // used by authHeaders()
+const LEGACY_KEY = "jwt";         // legacy places read this
+const GUEST_KEY  = "guest_token"; // current authHeaders() reads this
 
 const nowSec = () => Math.floor(Date.now() / 1000);
-
-function writeAll(token: string, exp?: number) {
-  try {
-    localStorage.setItem(TOKEN_KEY, JSON.stringify({ token, exp }));
-    localStorage.setItem(LEGACY_KEY, token);
-    localStorage.setItem(GUEST_KEY, token);
-  } catch {}
-}
 
 function readPacked(): { token: string; exp?: number } | null {
   try {
@@ -29,10 +15,15 @@ function readPacked(): { token: string; exp?: number } | null {
       if (j && typeof j.token === "string") return j;
     }
   } catch {}
-  // accept legacy if present
-  const legacy = localStorage.getItem(LEGACY_KEY) || localStorage.getItem(GUEST_KEY);
-  if (legacy && legacy.trim()) return { token: legacy };
   return null;
+}
+
+function writeAll(token: string, exp?: number) {
+  try {
+    localStorage.setItem(TOKEN_KEY, JSON.stringify({ token, exp }));
+    localStorage.setItem(LEGACY_KEY, token);
+    localStorage.setItem(GUEST_KEY, token);
+  } catch {}
 }
 
 async function fetchGuestToken(): Promise<{ token: string; exp?: number } | null> {
@@ -51,25 +42,32 @@ async function fetchGuestToken(): Promise<{ token: string; exp?: number } | null
         (typeof data === "string" ? data : data?.token || data?.jwt || data?.access_token) || null;
       const exp = typeof data === "object" ? Number(data?.exp) : undefined;
       if (token) return { token, exp };
-    } catch {
-      // try next endpoint
-    }
+    } catch {}
   }
   return null;
 }
 
-async function ensureGuest(force = false): Promise<string | null> {
+/** Ensure there’s a fresh token in localStorage (under all expected keys). */
+export async function ensureGuest(force = false): Promise<string | null> {
   try {
     if (!force) {
       const packed = readPacked();
       if (packed?.token) {
         const exp = Number(packed.exp ?? 0);
         if (!exp || exp - 60 > nowSec()) {
+          // still valid
           writeAll(packed.token, packed.exp);
           return packed.token;
         }
       }
+      // also accept legacy values if present
+      const legacy = localStorage.getItem(LEGACY_KEY) || localStorage.getItem(GUEST_KEY);
+      if (legacy && legacy.trim()) {
+        writeAll(legacy);
+        return legacy;
+      }
     }
+
     const fresh = await fetchGuestToken();
     if (fresh?.token) {
       writeAll(fresh.token, fresh.exp || nowSec() + 3600);
@@ -80,23 +78,3 @@ async function ensureGuest(force = false): Promise<string | null> {
     return null;
   }
 }
-// ---------------------------------------------------------------------------
-
-async function mount() {
-  try {
-    await ensureGuest(); // make sure API calls at startup are authorized
-  } catch {
-    // non-fatal; UI will still render and recover on first authorized call
-  }
-
-  const el = document.getElementById("root");
-  if (!el) throw new Error("Missing #root element");
-
-  createRoot(el).render(
-    <React.StrictMode>
-      <RouterGate />
-    </React.StrictMode>
-  );
-}
-
-mount();
