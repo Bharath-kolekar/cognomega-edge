@@ -1,5 +1,5 @@
 // frontend/src/components/UsageFeed.tsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   email: string;       // e.g. "vihaan@cognomega.com"
@@ -17,7 +17,7 @@ type UsageEvent = {
 
 type LocalPrompt = { ts: number; text: string };
 
-// ----- helpers -----
+/* ------------------- local prompt correlation helpers ------------------- */
 const LS_KEY = "cm_usage_prompts";
 const MATCH_WINDOW_MS = 5 * 60 * 1000; // ±5 minutes
 
@@ -50,45 +50,102 @@ function matchPrompt(evTimeMs: number, prompts: LocalPrompt[]): string | undefin
 
 function clip(s: string, n = 100): string {
   const t = (s || "").replace(/\s+/g, " ").trim();
-  return t.length > n ? t.slice(0, n - 1) + "… " : t;
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
 
+/* ----------------------------- auth helpers ----------------------------- */
+/** Read a bearer token from localStorage (handles our current + legacy keys). */
+function readToken(): string | null {
+  try {
+    // Preferred JSON payload: { token, exp }
+    const saved = localStorage.getItem("cog_auth_jwt");
+    if (saved) {
+      try {
+        const j = JSON.parse(saved);
+        if (j?.token && typeof j.token === "string") return j.token;
+      } catch {
+        /* ignore JSON parse error */
+      }
+    }
+    // Back-compat fallbacks (string tokens)
+    const jwt = localStorage.getItem("jwt");
+    if (jwt && jwt.trim()) return jwt.trim();
+    const guest = localStorage.getItem("guest_token");
+    if (guest && guest.trim()) return guest.trim();
+  } catch {
+    /* ignore storage errors (SSR/sandbox) */
+  }
+  return null;
+}
+
+function buildHeaders(email?: string): Record<string, string> {
+  const h: Record<string, string> = { Accept: "application/json" };
+  const tok = readToken();
+  if (tok) h["Authorization"] = `Bearer ${tok}`;
+  if (email && email.trim()) h["x-user-email"] = email.trim();
+  return h;
+}
+
+/* --------------------------------- UI ---------------------------------- */
 export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) {
-  const [items, setItems]  = useState<UsageEvent[]>([]);
+  const [items, setItems] = useState<UsageEvent[]>([]);
   const [loading, setLoad] = useState(true);
-  const [err, setErr]      = useState<string | null>(null);
-  const [lpVer, setLpVer]  = useState(0); // bump when localStorage changes
+  const [err, setErr] = useState<string | null>(null);
+  const [lpVer, setLpVer] = useState(0); // bump when localStorage changes
+  const abortRef = useRef<AbortController | null>(null);
+  const intervalRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     try {
       setErr(null);
+      // cancel any in-flight request
+      if (abortRef.current) {
+        try { abortRef.current.abort(); } catch {}
+      }
+      const ac = new AbortController();
+      abortRef.current = ac;
+
       const r = await fetch(`${apiBase}/api/billing/usage`, {
         method: "GET",
-        headers: {
-          Accept: "application/json",
-          "x-user-email": email,
-        },
+        headers: buildHeaders(email),
         cache: "no-store",
+        signal: ac.signal,
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const j = await r.json();
-      const list: UsageEvent[] = Array.isArray(j) ? (j as any) : (j?.events ?? []);
-      setItems(list);
+
+      const ct = r.headers.get("content-type") || "";
+      const isJson = ct.toLowerCase().includes("application/json");
+      const data: any = isJson ? await r.json() : await r.text();
+
+      if (!r.ok) {
+        const m = isJson && data?.error ? String(data.error) : `${r.status} ${r.statusText}`;
+        throw new Error(m);
+      }
+
+      const list: UsageEvent[] = Array.isArray(data) ? data : (data?.events ?? []);
+      setItems(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      setErr(e?.message || "load failed");
+      // Only show error if it wasn't an intentional abort
+      if (!(e?.name === "AbortError")) {
+        setErr(e?.message || "Error loading usage");
+      }
     } finally {
       setLoad(false);
+      abortRef.current = null;
     }
   }, [apiBase, email]);
 
   // initial + polling refresh
   useEffect(() => {
-    let timer: number | undefined;
-    (async () => {
-      await load();
-      timer = window.setInterval(load, refreshMs);
-    })();
-    return () => { if (timer) window.clearInterval(timer); };
+    setLoad(true);
+    void load();
+    // set up interval
+    intervalRef.current = window.setInterval(load, refreshMs) as unknown as number;
+    return () => {
+      if (intervalRef.current) window.clearInterval(intervalRef.current);
+      if (abortRef.current) {
+        try { abortRef.current.abort(); } catch {}
+      }
+    };
   }, [load, refreshMs]);
 
   // listen to localStorage updates so the What column refreshes immediately
@@ -105,7 +162,7 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
   const fmtWhen = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
-    // Example: 06 Sept, 09:51
+    // Example: 06 Sept, 09:51 (locale aware)
     return d.toLocaleString(undefined, {
       day: "2-digit",
       month: "short",
@@ -115,11 +172,20 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
   };
 
   const whatLabel = (x: UsageEvent) => {
-    if (x.route?.includes("/api/si/ask")) {
+    const route = x.route || "";
+    // Broaden matching for different deployments/paths
+    const isAsk =
+      route.includes("/api/si/ask") ||
+      route.includes("/v1/si/ask") ||
+      route.includes("/si/ask") ||
+      (route.includes("ask") && route.includes("/api/"));
+    if (isAsk) {
       const prompt = matchPrompt(new Date(x.created_at).getTime(), localPrompts);
       return prompt ? `Q: ${clip(prompt, 120)}` : "Q: (prompt not captured locally)";
     }
-    if (x.route?.includes("/v1/files/upload")) return "Upload processed";
+    if (route.includes("/v1/files/upload") || route.includes("/files/upload")) {
+      return "Upload processed";
+    }
     return "Usage";
   };
 
@@ -154,9 +220,12 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
             <tbody>
               {rows.map((x, i) => {
                 const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-                const tIn  = x.tokens_in  ?? 0;
+                const tIn = x.tokens_in ?? 0;
                 const tOut = x.tokens_out ?? 0;
-                const cr   = typeof x.cost_credits === "number" ? x.cost_credits.toFixed(3) : "0.000";
+                const cr =
+                  typeof x.cost_credits === "number"
+                    ? x.cost_credits.toFixed(3)
+                    : "0.000";
                 return (
                   <tr key={`${x.created_at}-${i}`} style={{ background: bg }}>
                     <td style={td}>{fmtWhen(x.created_at)}</td>
@@ -176,7 +245,14 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
               })}
             </tbody>
           </table>
-          <div style={{ padding: "6px 10px", fontSize: 11, color: "#6b7280", borderTop: "1px solid #e5e7eb" }}>
+          <div
+            style={{
+              padding: "6px 10px",
+              fontSize: 11,
+              color: "#6b7280",
+              borderTop: "1px solid #e5e7eb",
+            }}
+          >
             Auto-refreshing every {Math.round((refreshMs ?? 15000) / 1000)}s
           </div>
         </div>
@@ -194,7 +270,11 @@ const th: React.CSSProperties = {
   fontSize: 12,
 };
 const thRight: React.CSSProperties = { ...th, textAlign: "right", whiteSpace: "nowrap" };
-const td: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" };
+const td: React.CSSProperties = {
+  padding: "8px 10px",
+  borderBottom: "1px solid #f1f5f9",
+  verticalAlign: "top",
+};
 const tdRight: React.CSSProperties = { ...td, textAlign: "right", whiteSpace: "nowrap" };
 
 const pill: React.CSSProperties = {
