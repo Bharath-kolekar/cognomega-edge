@@ -13,23 +13,27 @@ function readToken(): string | null {
       try {
         const j = JSON.parse(saved);
         if (j?.token && typeof j.token === "string") return j.token;
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     // Back-compat fallbacks
     const jwt = localStorage.getItem("jwt");
     if (jwt && jwt.trim()) return jwt.trim();
     const guest = localStorage.getItem("guest_token");
     if (guest && guest.trim()) return guest.trim();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
 /**
  * Fetch remaining credits.
- * Tries /api/credits first, then /credits (back-compat).
+ * Tries /api/credits first, then /v1/credits, then /credits (back-compat).
  */
 export async function fetchCredits(signal?: AbortSignal): Promise<CreditsInfo> {
-  const headers: Record<string,string> = {
+  const headers: Record<string, string> = {
     Accept: "application/json",
     ...(authHeaders() as any),
   };
@@ -39,7 +43,12 @@ export async function fetchCredits(signal?: AbortSignal): Promise<CreditsInfo> {
   }
   // Never set Content-Type for GET
 
-  const tryUrls = [`${apiBase}/api/credits`, `${apiBase}/credits`];
+  const tryUrls = [
+    `${apiBase}/api/credits`,
+    `${apiBase}/v1/credits`,
+    `${apiBase}/credits`,
+  ];
+
   let lastErr: any = null;
 
   for (const url of tryUrls) {
@@ -50,14 +59,18 @@ export async function fetchCredits(signal?: AbortSignal): Promise<CreditsInfo> {
       const data: any = isJson ? await r.json() : await r.text();
 
       if (r.ok) {
-        // Accept either {remaining} or {credits}
-        const n =
-          data?.remaining ?? data?.credits ?? data?.balance ?? null;
-        if (n !== null && !Number.isNaN(Number(n))) {
-          return { ok: true, remaining: Number(n) };
+        // Accept common shapes: {remaining}, {credits}, {balance}, or nested {data:{credits}}
+        const raw =
+          (typeof data === "object" && data !== null
+            ? data.remaining ?? data.credits ?? data.balance ?? data?.data?.credits
+            : null);
+
+        const n = Number(raw);
+        if (!Number.isNaN(n) && n >= 0) {
+          return { ok: true, remaining: n };
         }
-      } else if (isJson && data?.error) {
-        lastErr = data.error;
+      } else if (isJson && (data as any)?.error) {
+        lastErr = (data as any).error;
       }
     } catch (e) {
       lastErr = e;
@@ -67,8 +80,42 @@ export async function fetchCredits(signal?: AbortSignal): Promise<CreditsInfo> {
   return { ok: false, error: String(lastErr || "Unable to load credits") };
 }
 
+/** Back-compat: some components import a plain number-returning function. */
+export async function fetchCreditBalance(signal?: AbortSignal): Promise<number> {
+  const info = await fetchCredits(signal);
+  return info.ok ? info.remaining : 0;
+}
+
 /** Small helper to print a friendly label like: "Credits — 23" */
 export function formatCreditsLabel(info: CreditsInfo): string {
   if (info.ok) return `Credits — ${info.remaining}`;
   return `Credits — ·`;
+}
+
+/** Optional: quick inspector for debugging API responses locally. */
+export async function fetchCreditDebug(signal?: AbortSignal): Promise<any> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...(authHeaders() as any),
+  };
+  const tok = readToken();
+  if (tok && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${tok}`;
+  }
+  for (const url of [
+    `${apiBase}/api/credits`,
+    `${apiBase}/v1/credits`,
+    `${apiBase}/credits`,
+  ]) {
+    try {
+      const r = await fetch(url, { headers, signal });
+      const ct = r.headers.get("content-type") || "";
+      return ct.toLowerCase().includes("application/json")
+        ? await r.json()
+        : await r.text();
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
 }
