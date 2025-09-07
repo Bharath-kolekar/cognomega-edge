@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { CreateWebWorkerMLCEngine } from "@mlc-ai/web-llm";
 import CreditPill from "./components/CreditPill";
 import UsageFeed from "./components/UsageFeed";
+import LaunchInBuilder from "./components/LaunchInBuilder";
 
 declare global {
   interface Window { turnstile?: any }
@@ -426,14 +427,42 @@ export default function App() {
       <p>Auth: {authMsg}</p>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <input
-          style={{ flex: 1, padding: 8 }}
+        <textarea
+          style={{
+            flex: 1,
+            padding: 8,
+            minHeight: 96,
+            resize: "vertical",
+            lineHeight: 1.4,
+            fontFamily: "inherit",
+            fontSize: 14,
+          }}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Ask anything…  (Ctrl/Cmd + Enter to send)"
+          onKeyDown={(e) => {
+            // Allow plain Enter for newlines; submit on Ctrl+Enter (Win/Linux) or Cmd+Enter (macOS).
+            // @ts-expect-error: nativeEvent may have isComposing
+            if (e.isComposing || e.nativeEvent?.isComposing) return;
+            const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
+            if (isEnter && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              void ask();
+            }
+          }}
         />
         <button onClick={ask}>
           Ask
         </button>
+      </div>
+
+      {/* Real-time App Builder launcher */}
+      <div style={{ marginTop: 12, padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
+        <LaunchInBuilder
+          defaultName="Sketch Prototype"
+          defaultPages="Home,Dashboard,Chat"
+          defaultDesc={prompt || "From Sketch to App"}
+        />
       </div>
 
       <pre
