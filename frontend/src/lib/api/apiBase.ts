@@ -26,6 +26,7 @@ declare global {
 const LS_API_BASE = "cm_api_base";
 
 function _readApiBaseOnce(): string {
+  // 1) Local override (runtime)
   try {
     const ls = localStorage.getItem(LS_API_BASE);
     if (ls && ls.trim()) return ls.trim();
@@ -33,17 +34,18 @@ function _readApiBaseOnce(): string {
     /* ignore sandbox */
   }
 
+  // 2) Window-global injected at runtime (e.g., CF/Wrangler env)
   if (typeof window !== "undefined") {
     const w = (window as any).__COG_API_BASE__;
     if (w && String(w).trim()) return String(w).trim();
   }
 
-  // Vite env (build-time)
+  // 3) Vite env (build-time)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const v = (import.meta as any)?.env?.VITE_API_BASE;
   if (v && String(v).trim()) return String(v).trim();
 
-  // Final fallback: same-origin (works only if API is reverse-proxied)
+  // 4) Final fallback: same-origin (works only if API is reverse-proxied)
   return "";
 }
 
@@ -74,21 +76,13 @@ export function setApiBase(next?: string) {
  * - Always re-reads the base so updates take effect immediately.
  */
 export function apiUrl(path: string): string {
-<<<<<<< HEAD
-  const p = String(path || "");
-  if (/^https?:\/\//i.test(p)) return p; // absolute passthrough
-  const base = currentApiBase();
-  if (!base) return p.startsWith("/") ? p : `/${p}`; // same-origin (reverse-proxy)
-  return base.replace(/\/+$/, "") + "/" + p.replace(/^\/+/, "");
-=======
-  if (/^https?:\/\//i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) return path; // absolute passthrough
   const base = currentApiBase();
   if (!base) {
     // same-origin (reverse-proxy scenario) — return a clean leading-slash path
     return `/${String(path || "").replace(/^\/+/, "")}`;
   }
   return base.replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
->>>>>>> origin/main
 }
 
 /**
