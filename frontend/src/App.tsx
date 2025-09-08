@@ -1,9 +1,11 @@
 // frontend/src/App.tsx
-<<<<<<< HEAD
-import { apiBase, apiUrl, readUserEmail, ensureApiBase, currentApiBase } from "./lib/api/apiBase";
-=======
-import { apiBase, apiUrl, readUserEmail } from "./lib/api/apiBase";
->>>>>>> origin/main
+import {
+  apiBase,
+  apiUrl,
+  readUserEmail,
+  ensureApiBase,
+  currentApiBase,
+} from "./lib/api/apiBase";
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -19,7 +21,10 @@ declare global {
   }
 }
 
-const TS_SITE = ""; // keep empty unless you wire Turnstile
+const TS_SITE =
+  (typeof import.meta !== "undefined" &&
+    (import.meta as any)?.env?.VITE_TURNSTILE_SITE_KEY) ||
+  "";
 
 // ---- types for polling UI (mirrors tool page) ----
 type Job = {
@@ -137,7 +142,6 @@ export default function App() {
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Derived status
   const isDone = job?.status === "done";
 
   const engineRef = useRef<any>(null);
@@ -205,7 +209,7 @@ export default function App() {
 
           if (next.status === "done") {
             setInfo("Job finished. You can download the result.");
-            return; // stop polling
+            return;
           }
           if (next.status === "error" || next.status === "failed") {
             setError("Job failed.");
@@ -254,7 +258,6 @@ export default function App() {
     }
   }, [jobId, cleanHeaders]);
 
-  // cleanup polling when unmounting
   useEffect(() => {
     return () => {
       if (pollAbort.current) pollAbort.current.abort();
@@ -262,7 +265,7 @@ export default function App() {
     };
   }, []);
 
-  // --- NEW: restore & poll if landing with ?job= in URL ---
+  // --- restore & poll if landing with ?job= in URL ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("job");
@@ -274,33 +277,29 @@ export default function App() {
     }
   }, [startPolling]);
 
-  // --- Optional UX: when restored job finishes, hint (or auto-download) ---
+  // --- Optional: when restored job finishes, hint (or auto-download) ---
   useEffect(() => {
     if (jobId && isDone) {
       setInfo("Job finished. You can download the result.");
-      // onDownload().catch(() => {}); // enable to auto-download
+      // void onDownload(); // enable to auto-download
     }
   }, [jobId, isDone, onDownload]);
 
   // ---------- health probe & boot ----------
   useEffect(() => {
     (async () => {
-<<<<<<< HEAD
       // Ensure API base is resolved before health checks
       try {
         await ensureApiBase();
         setResolvedBase(currentApiBase());
       } catch {}
 
-=======
->>>>>>> origin/main
       // Wait for auth bootstrap if main.tsx exposed it
       try {
         await (window as any).__cogAuthReady;
       } catch {}
-<<<<<<< HEAD
 
-      // Health probe tries multiple known paths, but accepts JSON only
+      // Health probe: try multiple endpoints, accept JSON only
       const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
       let reported = false;
       for (const p of paths) {
@@ -312,28 +311,11 @@ export default function App() {
           setHealth(JSON.stringify(data));
           reported = true;
           break;
-=======
-      // Health probe tries multiple known paths
-      const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
-      for (const p of paths) {
-        try {
-          const r = await fetch(apiUrl(p), { headers: { Accept: "application/json" } });
-          const ct = r.headers.get("content-type") || "";
-          const data = ct.includes("application/json") ? await r.json() : await r.text();
-          if (r.ok) {
-            setHealth(typeof data === "string" ? data : JSON.stringify(data));
-            break;
-          }
->>>>>>> origin/main
         } catch {
           // try next
         }
       }
-<<<<<<< HEAD
       setHealth((h) => (reported ? h : "down"));
-=======
-      setHealth((h) => (h === "checking..." ? "down" : h));
->>>>>>> origin/main
     })();
 
     // WebLLM (best-effort)
@@ -355,7 +337,7 @@ export default function App() {
     if (TS_SITE) {
       iv = setInterval(() => {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
-          widRef.current = window.turnstile.render(tsDivRefRef.current, {
+          widRef.current = window.turnstile.render(tsDivRef.current, {
             sitekey: TS_SITE,
             appearance: "execute",
             size: "flexible",
@@ -367,7 +349,7 @@ export default function App() {
           }
           clearInterval(iv);
           iv = null;
-          refreshJwt(); // proceed once widget rendered
+          void refreshJwt(); // proceed once widget rendered
         }
       }, 200);
 
@@ -375,12 +357,12 @@ export default function App() {
       fb = setTimeout(() => {
         if (!widRef.current) {
           setAuthMsg("turnstile unavailable; proceeding without it");
-          refreshJwt(); // server allows guest without Turnstile
+          void refreshJwt(); // server allows guest without Turnstile
         }
       }, 5000);
     } else {
       // No Turnstile configured → proceed immediately
-      refreshJwt();
+      void refreshJwt();
     }
 
     return () => {
@@ -576,7 +558,6 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h1 style={{ margin: 0 }}>Cognomega</h1>
         <div style={{ marginLeft: "auto" }}>
-          {/* CreditPill now self-manages; no props */}
           <CreditPill />
         </div>
       </div>
@@ -640,11 +621,7 @@ export default function App() {
         {resp}
       </pre>
 
-<<<<<<< HEAD
       <UsageFeed email={readUserEmail()} apiBase={resolvedBase || apiBase} refreshMs={3000} />
-=======
-      <UsageFeed email={readUserEmail()} apiBase={apiBase} refreshMs={3000} />
->>>>>>> origin/main
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -655,7 +632,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* Lightweight status block (useful if navigation is blocked) */}
       {(jobId || job || error || info) && (
         <div
           style={{
