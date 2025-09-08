@@ -1,5 +1,9 @@
 // frontend/src/App.tsx
+<<<<<<< HEAD
+import { apiBase, apiUrl, readUserEmail, ensureApiBase, currentApiBase } from "./lib/api/apiBase";
+=======
 import { apiBase, apiUrl, readUserEmail } from "./lib/api/apiBase";
+>>>>>>> origin/main
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -125,6 +129,7 @@ export default function App() {
   const [authMsg, setAuthMsg] = useState<string>("initializing...");
   const [authReady, setAuthReady] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [resolvedBase, setResolvedBase] = useState<string>(apiBase);
 
   // Poll/download UI state (copied from tool page)
   const [jobId, setJobId] = useState<string | null>(null);
@@ -280,10 +285,34 @@ export default function App() {
   // ---------- health probe & boot ----------
   useEffect(() => {
     (async () => {
+<<<<<<< HEAD
+      // Ensure API base is resolved before health checks
+      try {
+        await ensureApiBase();
+        setResolvedBase(currentApiBase());
+      } catch {}
+
+=======
+>>>>>>> origin/main
       // Wait for auth bootstrap if main.tsx exposed it
       try {
         await (window as any).__cogAuthReady;
       } catch {}
+<<<<<<< HEAD
+
+      // Health probe tries multiple known paths, but accepts JSON only
+      const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
+      let reported = false;
+      for (const p of paths) {
+        try {
+          const r = await fetch(apiUrl(p), { headers: { Accept: "application/json" } });
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+          if (!r.ok || !ct.includes("application/json")) continue;
+          const data = await r.json();
+          setHealth(JSON.stringify(data));
+          reported = true;
+          break;
+=======
       // Health probe tries multiple known paths
       const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
       for (const p of paths) {
@@ -295,11 +324,16 @@ export default function App() {
             setHealth(typeof data === "string" ? data : JSON.stringify(data));
             break;
           }
+>>>>>>> origin/main
         } catch {
           // try next
         }
       }
+<<<<<<< HEAD
+      setHealth((h) => (reported ? h : "down"));
+=======
       setHealth((h) => (h === "checking..." ? "down" : h));
+>>>>>>> origin/main
     })();
 
     // WebLLM (best-effort)
@@ -606,7 +640,11 @@ export default function App() {
         {resp}
       </pre>
 
+<<<<<<< HEAD
+      <UsageFeed email={readUserEmail()} apiBase={resolvedBase || apiBase} refreshMs={3000} />
+=======
       <UsageFeed email={readUserEmail()} apiBase={apiBase} refreshMs={3000} />
+>>>>>>> origin/main
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
