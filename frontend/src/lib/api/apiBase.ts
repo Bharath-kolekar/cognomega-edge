@@ -3,16 +3,17 @@
 // Single source of truth for:
 // 1) API base URL discovery/override
 // 2) Authorization header construction (guest + legacy)
-// 3) Tiny helpers you can use across the app
+// 3) Small helpers used across the app
 //
-// No hard-coding: prefers runtime/config/localStorage, with safe fallbacks.
+// No hard-coding of domains: prefers runtime config + localStorage,
+// with safe fallbacks and optional runtime auto-discovery.
 
 type PackedToken = { token: string; exp?: number };
 
 // ---- API base resolution ----------------------------------------------------
 // Priority (first hit wins):
 // 1) localStorage["cm_api_base"]
-// 2) window.__COG_API_BASE__ (settable by an inline <script> or CF env injection)
+// 2) window.__COG_API_BASE__ (settable by inline <script> or CF env injection)
 // 3) import.meta.env.VITE_API_BASE
 // 4) Same-origin (empty string) — only if your backend is reverse-proxied
 
@@ -24,16 +25,17 @@ declare global {
 
 const LS_API_BASE = "cm_api_base";
 
-function readApiBase(): string {
+function _readApiBaseOnce(): string {
   try {
     const ls = localStorage.getItem(LS_API_BASE);
     if (ls && ls.trim()) return ls.trim();
-  } catch { /* ignore sandbox */ }
+  } catch {
+    /* ignore sandbox */
+  }
 
   if (typeof window !== "undefined") {
-    const win = window as any;
-    const w = (win.__COG_API_BASE__ ?? "").toString().trim();
-    if (w) return w;
+    const w = (window as any).__COG_API_BASE__;
+    if (w && String(w).trim()) return String(w).trim();
   }
 
   // Vite env (build-time)
@@ -45,26 +47,79 @@ function readApiBase(): string {
   return "";
 }
 
-/** Public: current API base (no trailing slash) */
-export const apiBase = readApiBase();
+/** Public (boot-time) snapshot of the API base (no trailing slash). */
+export const apiBase = _readApiBaseOnce();
+
+/** Read the current API base dynamically (reflects changes after setApiBase/auto-discover). */
+export function currentApiBase(): string {
+  return _readApiBaseOnce();
+}
 
 /** Optional: allow changing the API base *at runtime* (e.g., debug panel) */
 export function setApiBase(next?: string) {
   try {
     if (next && next.trim()) {
-      localStorage.setItem(LS_API_BASE, next.trim());
+      localStorage.setItem(LS_API_BASE, next.trim().replace(/\/+$/, ""));
     } else {
       localStorage.removeItem(LS_API_BASE);
     }
-  } catch { /* ignore */ }
-  // Not re-exporting a live ref; callers should refresh app if they change it.
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Build a fully-qualified API URL for a given path.
+ * Always re-reads the base so updates take effect immediately.
+ */
+export function apiUrl(path: string): string {
+  const base = currentApiBase();
+  if (!base) return path; // same-origin (reverse-proxy scenario)
+  return base.replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
+}
+
+/**
+ * Try to auto-discover the API base at runtime without hard-coding domains.
+ * We probe common reverse-proxy prefixes and health endpoints.
+ * If a JSON health responds, we persist the discovered base.
+ */
+export async function ensureApiBase(): Promise<string> {
+  let base = currentApiBase();
+  if (base) return base;
+
+  if (typeof window === "undefined") return "";
+  const origin = window.location.origin;
+  const prefixes = ["", "/api", "/v1"]; // safe, path-only (no domains)
+  const endpoints = ["/ready", "/api/ready", "/health", "/healthz"];
+
+  for (const p of prefixes) {
+    const candidate = p ? origin + p : origin;
+    for (const ep of endpoints) {
+      try {
+        const r = await fetch(candidate.replace(/\/+$/, "") + ep, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        });
+        const ct = (r.headers.get("content-type") || "").toLowerCase();
+        if (r.ok && ct.includes("application/json")) {
+          setApiBase(candidate);
+          return candidate;
+        }
+      } catch {
+        /* try next */
+      }
+    }
+  }
+
+  // Nothing found — leave as-is (same-origin empty string).
+  return currentApiBase();
 }
 
 // ---- Token helpers (guest + legacy) ----------------------------------------
 
-const KEY_GUEST = "guest_token";   // our preferred simple mirror
-const KEY_JWT   = "jwt";           // legacy
-const KEY_COG   = "cog_auth_jwt";  // JSON: { token, exp? }
+const KEY_GUEST = "guest_token"; // our preferred simple mirror
+const KEY_JWT = "jwt";           // legacy
+const KEY_COG = "cog_auth_jwt";  // JSON: { token, exp? }
 
 function readPacked(): PackedToken | null {
   try {
@@ -73,15 +128,18 @@ function readPacked(): PackedToken | null {
       try {
         const p = JSON.parse(raw);
         if (p && typeof p.token === "string") return { token: p.token, exp: p.exp };
-      } catch { /* ignore JSON parse error */ }
+      } catch {
+        /* ignore JSON parse error */
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
 /** Read a token from any of our known locations. */
 export function readToken(): string | null {
-  // JSON-packed (preferred)
   const packed = readPacked();
   if (packed?.token && `${packed.token}`.trim()) return `${packed.token}`.trim();
 
@@ -91,7 +149,9 @@ export function readToken(): string | null {
     if (jwt && jwt.trim()) return jwt.trim();
     const guest = localStorage.getItem(KEY_GUEST);
     if (guest && guest.trim()) return guest.trim();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   return null;
 }
@@ -111,7 +171,9 @@ export function writeTokenEverywhere(token: string, exp?: number) {
     } catch {
       window.dispatchEvent(new Event("storage"));
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 // ---- Headers ---------------------------------------------------------------

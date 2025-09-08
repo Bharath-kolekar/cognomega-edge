@@ -3,13 +3,14 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import RouterGate from "./RouterGate";
-import { apiBase } from "./lib/api/apiBase";
+import { apiUrl, ensureApiBase } from "./lib/api/apiBase";
 
 /** ------------------------------------------------------------------------
  *  Minimal guest-auth bootstrap (waits before first render)
  *  - Persists under: cog_auth_jwt (JSON), jwt (string), guest_token (string)
  *  - Prefers POST /auth/guest, falls back to /api/gen-jwt, /gen-jwt
  *  - Broadcasts a synthetic storage event so same-tab listeners refresh
+ *  - Uses apiUrl() for endpoints (after ensureApiBase() discovery)
  *  ---------------------------------------------------------------------- */
 
 const TOKEN_KEY  = "cog_auth_jwt"; // { token, exp }
@@ -62,29 +63,34 @@ function readPacked(): { token: string; exp?: number } | null {
 
 async function tryPostGuest(): Promise<{ token: string; exp?: number } | null> {
   try {
-    const r = await fetch(`${apiBase}/auth/guest`, {
+    const r = await fetch(apiUrl("/auth/guest"), {
       method: "POST",
       headers: { Accept: "application/json" },
     });
     if (!r.ok) return null;
     const ct = r.headers.get("content-type") || "";
     const j: any = ct.includes("application/json") ? await r.json() : await r.text();
-    const token = (typeof j === "string" ? j : j?.token || j?.jwt || j?.access_token) || null;
-    const exp   = typeof j === "object" ? Number(j?.exp ?? (j?.expires_in ? nowSec() + Number(j.expires_in) : undefined)) : undefined;
+    const token =
+      (typeof j === "string" ? j : j?.token || j?.jwt || j?.access_token) || null;
+    const exp =
+      typeof j === "object"
+        ? Number(j?.exp ?? (j?.expires_in ? nowSec() + Number(j.expires_in) : undefined))
+        : undefined;
     return token ? { token, exp } : null;
   } catch {
     return null;
   }
 }
 
-async function tryGetFallback(url: string): Promise<{ token: string; exp?: number } | null> {
+async function tryGetFallback(path: string): Promise<{ token: string; exp?: number } | null> {
   try {
-    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    const r = await fetch(apiUrl(path), { headers: { Accept: "application/json" } });
     if (!r.ok) return null;
     const ct = r.headers.get("content-type") || "";
     const j: any = ct.includes("application/json") ? await r.json() : await r.text();
-    const token = (typeof j === "string" ? j : j?.token || j?.jwt || j?.access_token) || null;
-    const exp   = typeof j === "object" ? Number(j?.exp) : undefined;
+    const token =
+      (typeof j === "string" ? j : j?.token || j?.jwt || j?.access_token) || null;
+    const exp = typeof j === "object" ? Number(j?.exp) : undefined;
     return token ? { token, exp } : null;
   } catch {
     return null;
@@ -96,9 +102,9 @@ async function fetchGuestToken(): Promise<{ token: string; exp?: number } | null
   const first = await tryPostGuest();
   if (first) return first;
 
-  const fallbacks = [`${apiBase}/api/gen-jwt`, `${apiBase}/gen-jwt`];
-  for (const u of fallbacks) {
-    const got = await tryGetFallback(u);
+  const fallbacks = ["/api/gen-jwt", "/gen-jwt"];
+  for (const p of fallbacks) {
+    const got = await tryGetFallback(p);
     if (got) return got;
   }
   return null;
@@ -148,6 +154,13 @@ async function mount() {
   const rootEl = document.getElementById("root");
   if (!rootEl) throw new Error("Missing #root element");
   rootEl.textContent = "Initializing…";
+
+  // 0) Discover API base (writes to localStorage if needed)
+  try {
+    await ensureApiBase();
+  } catch {
+    // still proceed; components can surface API connectivity issues
+  }
 
   // Expose a ready promise for any modules that choose to await it
   (window as any).__cogAuthReady = ensureGuestWithRetry();

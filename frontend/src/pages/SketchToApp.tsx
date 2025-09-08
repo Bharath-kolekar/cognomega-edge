@@ -1,6 +1,6 @@
 ﻿// frontend/src/pages/SketchToApp.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiBase, authHeaders } from "../lib/api/apiBase";
+import { apiUrl, authHeaders } from "../lib/api/apiBase";
 import LaunchInBuilder from "../components/LaunchInBuilder";
 import "../index.css";
 
@@ -62,7 +62,7 @@ async function mintGuestToken(): Promise<string | null> {
   const tries: Array<() => Promise<{ token?: string; exp?: number } | null>> = [
     async () => {
       try {
-        const r = await fetch(`${apiBase}/auth/guest`, { method: "POST", headers: { Accept: "application/json" } });
+        const r = await fetch(apiUrl("/auth/guest"), { method: "POST", headers: { Accept: "application/json" } });
         if (!r.ok) return null;
         const ct = (r.headers.get("content-type") || "").toLowerCase();
         const j: any = ct.includes("application/json") ? await r.json() : await r.text();
@@ -73,7 +73,7 @@ async function mintGuestToken(): Promise<string | null> {
     },
     async () => {
       try {
-        const r = await fetch(`${apiBase}/api/gen-jwt`, { headers: { Accept: "application/json" } });
+        const r = await fetch(apiUrl("/api/gen-jwt"), { headers: { Accept: "application/json" } });
         if (!r.ok) return null;
         const ct = (r.headers.get("content-type") || "").toLowerCase();
         const j: any = ct.includes("application/json") ? await r.json() : await r.text();
@@ -84,7 +84,7 @@ async function mintGuestToken(): Promise<string | null> {
     },
     async () => {
       try {
-        const r = await fetch(`${apiBase}/gen-jwt`, { headers: { Accept: "application/json" } });
+        const r = await fetch(apiUrl("/gen-jwt"), { headers: { Accept: "application/json" } });
         if (!r.ok) return null;
         const ct = (r.headers.get("content-type") || "").toLowerCase();
         const j: any = ct.includes("application/json") ? await r.json() : await r.text();
@@ -241,7 +241,7 @@ export default function SketchToApp() {
             return;
           }
           const j = await fetchJSON(
-            `${apiBase}/api/jobs/${encodeURIComponent(id)}`,
+            apiUrl(`/api/jobs/${encodeURIComponent(id)}`),
             pollAbort.current?.signal
           );
           const jobObj = (j?.job ?? {}) as any;
@@ -299,7 +299,7 @@ export default function SketchToApp() {
         form.append("file", f);
         form.append("prompt", prompt);
 
-        const r = await fetch(`${apiBase}/v1/files/upload`, {
+        const r = await fetch(apiUrl("/v1/files/upload"), {
           method: "POST",
           headers: makeHeaders(), // DO NOT set content-type here
           body: form,
@@ -379,14 +379,14 @@ export default function SketchToApp() {
     try {
       await ensureAuthToken();
       let r = await fetch(
-        `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`,
+        apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/download`),
         { method: "GET", headers: makeHeaders(), signal: pollAbort.current?.signal }
       );
 
       if (r.status === 401 || r.status === 403) {
         await ensureAuthToken(true);
         r = await fetch(
-          `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`,
+          apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/download`),
           { method: "GET", headers: makeHeaders(), signal: pollAbort.current?.signal }
         );
       }
