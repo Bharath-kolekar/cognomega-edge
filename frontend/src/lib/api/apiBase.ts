@@ -70,11 +70,16 @@ export function setApiBase(next?: string) {
 
 /**
  * Build a fully-qualified API URL for a given path.
- * Always re-reads the base so updates take effect immediately.
+ * - Absolute URLs pass through unchanged.
+ * - Always re-reads the base so updates take effect immediately.
  */
 export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
   const base = currentApiBase();
-  if (!base) return path; // same-origin (reverse-proxy scenario)
+  if (!base) {
+    // same-origin (reverse-proxy scenario) — return a clean leading-slash path
+    return `/${String(path || "").replace(/^\/+/, "")}`;
+  }
   return base.replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
 }
 
