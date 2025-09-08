@@ -74,11 +74,13 @@ export function setApiBase(next?: string) {
  * - Always re-reads the base so updates take effect immediately.
  */
 export function apiUrl(path: string): string {
-  const p = String(path || "");
-  if (/^https?:\/\//i.test(p)) return p; // absolute passthrough
+  if (/^https?:\/\//i.test(path)) return path;
   const base = currentApiBase();
-  if (!base) return p.startsWith("/") ? p : `/${p}`; // same-origin (reverse-proxy)
-  return base.replace(/\/+$/, "") + "/" + p.replace(/^\/+/, "");
+  if (!base) {
+    // same-origin (reverse-proxy scenario) — return a clean leading-slash path
+    return `/${String(path || "").replace(/^\/+/, "")}`;
+  }
+  return base.replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
 }
 
 /**
@@ -212,8 +214,7 @@ export function jsonRequest(body: unknown): RequestInit {
 /** Best-effort email used by analytics/usage. */
 export function readUserEmail(): string {
   try {
-    const a =
-      (localStorage.getItem("user_email") || localStorage.getItem("email") || "").trim();
+    const a = (localStorage.getItem("user_email") || localStorage.getItem("email") || "").trim();
     return a || "guest@cognomega.com";
   } catch {
     return "guest@cognomega.com";

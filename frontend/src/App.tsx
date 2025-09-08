@@ -41,12 +41,7 @@ function readPrompts(): { ts: number; text: string }[] {
     const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
     const cutoff = Date.now() - MAX_AGE_MS;
     return arr
-      .filter(
-        (p) =>
-          typeof p?.ts === "number" &&
-          typeof p?.text === "string" &&
-          p.ts >= cutoff
-      )
+      .filter((p) => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff)
       .slice(-MAX_PROMPTS);
   } catch {
     return [];
@@ -486,8 +481,7 @@ export default function App() {
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
-    if (!authReady || !jwtRef.current)
-      return alert("Still obtaining auth… try again in a moment.");
+    if (!authReady || !jwtRef.current) return alert("Still obtaining auth… try again in a moment.");
     setUploading(true);
     setError(null);
     setInfo("Uploading…");
@@ -663,16 +657,8 @@ export default function App() {
               )}
             </>
           )}
-          {info && (
-            <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>
-              {info}
-            </div>
-          )}
-          {error && (
-            <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>
-              Error: {error}
-            </div>
-          )}
+          {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
+          {error && <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>Error: {error}</div>}
         </div>
       )}
 
