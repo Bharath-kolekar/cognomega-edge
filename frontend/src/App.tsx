@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import { apiBase } from "./lib/api/apiBase";
+import { apiBase, apiUrl } from "./lib/api/apiBase";
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -15,7 +15,6 @@ declare global {
 }
 
 const TS_SITE = ""; // keep empty unless you wire Turnstile
-const DEFAULT_API = apiBase;
 
 // ---- types for polling UI (mirrors tool page) ----
 type Job = {
@@ -196,9 +195,7 @@ export default function App() {
             return;
           }
 
-          const j = await fetchJSON(
-            `${apiBase}/api/jobs/${encodeURIComponent(id)}`
-          );
+          const j = await fetchJSON(apiUrl(`/api/jobs/${encodeURIComponent(id)}`));
           const jobObj = (j?.job ?? {}) as any;
           const next: Job = {
             id: jobObj.id,
@@ -232,13 +229,10 @@ export default function App() {
     setError(null);
     setInfo("Preparing download…");
     try {
-      const r = await fetch(
-        `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`,
-        {
-          method: "GET",
-          headers: cleanHeaders(),
-        }
-      );
+      const r = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/download`), {
+        method: "GET",
+        headers: cleanHeaders(),
+      });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
 
       const cd = r.headers.get("content-disposition") || "";
@@ -291,12 +285,12 @@ export default function App() {
 
   // ---------- health probe & boot ----------
   useEffect(() => {
-    // Health probe tries multiple known paths
+    // Health probe tries multiple known paths via apiUrl()
     (async () => {
       const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
       for (const p of paths) {
         try {
-          const r = await fetch(`${DEFAULT_API}${p}`, { headers: { Accept: "application/json" } });
+          const r = await fetch(apiUrl(p), { headers: { Accept: "application/json" } });
           const ct = r.headers.get("content-type") || "";
           const data = ct.includes("application/json") ? await r.json() : await r.text();
           if (r.ok) {
@@ -402,12 +396,12 @@ export default function App() {
     } as Record<string, string>;
 
     const candidates: Array<{ url: string; method: "GET" | "POST" }> = [
-      { url: `${DEFAULT_API}/auth/guest`, method: "GET" },
-      { url: `${DEFAULT_API}/auth/guest`, method: "POST" },
-      { url: `${DEFAULT_API}/api/auth/guest`, method: "GET" },
-      { url: `${DEFAULT_API}/api/auth/guest`, method: "POST" },
-      { url: `${DEFAULT_API}/api/gen-jwt`, method: "GET" },
-      { url: `${DEFAULT_API}/gen-jwt`, method: "GET" },
+      { url: apiUrl("/auth/guest"), method: "GET" },
+      { url: apiUrl("/auth/guest"), method: "POST" },
+      { url: apiUrl("/api/auth/guest"), method: "GET" },
+      { url: apiUrl("/api/auth/guest"), method: "POST" },
+      { url: apiUrl("/api/gen-jwt"), method: "GET" },
+      { url: apiUrl("/gen-jwt"), method: "GET" },
     ];
 
     for (const c of candidates) {
@@ -470,7 +464,7 @@ export default function App() {
       };
       if (jwtRef.current) headers["Authorization"] = `Bearer ${jwtRef.current}`;
 
-      const r = await fetch(DEFAULT_API + "/api/si/ask", {
+      const r = await fetch(apiUrl("/api/si/ask"), {
         method: "POST",
         headers,
         body: JSON.stringify({ skill: "summarize", input: prompt }),
@@ -503,7 +497,7 @@ export default function App() {
       const fd = new FormData();
       fd.append("file", f);
 
-      const r = await fetch(`${apiBase}/v1/files/upload`, {
+      const r = await fetch(apiUrl("/v1/files/upload"), {
         method: "POST",
         headers: {
           // DO NOT set Content-Type for multipart
@@ -619,7 +613,7 @@ export default function App() {
 
       <UsageFeed
         email={readUserEmail()}
-        apiBase={DEFAULT_API}
+        apiBase={apiBase}
         refreshMs={3000}
       />
 
