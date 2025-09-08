@@ -17,11 +17,11 @@ type UploadResp =
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
 
-// ---- Auth bootstrap & header helpers ---------------------------------------
+/* ------------------------- Token/bootstrap helpers ------------------------ */
 
-const KEY_GUEST = "guest_token";      // what apiBase.ts reads
-const KEY_JWT   = "jwt";              // legacy key some helpers use
-const KEY_COG   = "cog_auth_jwt";     // richer record { token, exp? }
+const KEY_GUEST = "guest_token";  // what apiBase.ts reads
+const KEY_JWT   = "jwt";          // legacy mirror
+const KEY_COG   = "cog_auth_jwt"; // { token, exp? }
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -36,70 +36,75 @@ function readAnyToken(): string | null {
       try {
         const j = JSON.parse(raw);
         if (j && typeof j.token === "string" && j.token.trim()) return j.token;
-      } catch {}
+      } catch { /* ignore */ }
     }
-  } catch {}
+  } catch { /* ignore */ }
   return null;
 }
 
 function writeAllTokens(token: string, exp?: number) {
   try {
-    localStorage.setItem(KEY_GUEST, token);                 // primary for apiBase.ts
-    localStorage.setItem(KEY_JWT, token);                   // legacy mirror
+    localStorage.setItem(KEY_GUEST, token);
+    localStorage.setItem(KEY_JWT, token);
     localStorage.setItem(KEY_COG, JSON.stringify({ token, exp }));
-  } catch {}
+    // nudge same-tab listeners
+    try {
+      const ev = new StorageEvent("storage", { key: KEY_COG, newValue: JSON.stringify({ token, exp }) });
+      window.dispatchEvent(ev);
+    } catch {
+      window.dispatchEvent(new Event("storage"));
+    }
+  } catch { /* ignore */ }
 }
 
-/** Try to mint a guest token from the API and persist it. */
+/** Try to mint a guest token (prefers POST /auth/guest; falls back gracefully). */
 async function mintGuestToken(): Promise<string | null> {
-  const candidates: Array<{ url: string; method: "GET" | "POST" }> = [
-    { url: `${apiBase}/auth/guest`, method: "GET" },
-    { url: `${apiBase}/auth/guest`, method: "POST" },
-    { url: `${apiBase}/api/auth/guest`, method: "GET" },
-    { url: `${apiBase}/api/auth/guest`, method: "POST" },
+  const tries: Array<() => Promise<{ token?: string; exp?: number } | null>> = [
+    async () => {
+      try {
+        const r = await fetch(`${apiBase}/auth/guest`, { method: "POST", headers: { Accept: "application/json" } });
+        if (!r.ok) return null;
+        const ct = (r.headers.get("content-type") || "").toLowerCase();
+        const j: any = ct.includes("application/json") ? await r.json() : await r.text();
+        const token = (typeof j === "string" ? j : j?.token || j?.jwt || j?.guest_token) || null;
+        const exp = typeof j === "object" ? Number(j?.exp ?? (j?.expires_in ? nowSec() + Number(j.expires_in) : undefined)) : undefined;
+        return token ? { token, exp } : null;
+      } catch { return null; }
+    },
+    async () => {
+      try {
+        const r = await fetch(`${apiBase}/api/gen-jwt`, { headers: { Accept: "application/json" } });
+        if (!r.ok) return null;
+        const ct = (r.headers.get("content-type") || "").toLowerCase();
+        const j: any = ct.includes("application/json") ? await r.json() : await r.text();
+        const token = (typeof j === "string" ? j : j?.token || j?.jwt) || null;
+        const exp = typeof j === "object" ? Number(j?.exp) : undefined;
+        return token ? { token, exp } : null;
+      } catch { return null; }
+    },
+    async () => {
+      try {
+        const r = await fetch(`${apiBase}/gen-jwt`, { headers: { Accept: "application/json" } });
+        if (!r.ok) return null;
+        const ct = (r.headers.get("content-type") || "").toLowerCase();
+        const j: any = ct.includes("application/json") ? await r.json() : await r.text();
+        const token = (typeof j === "string" ? j : j?.token || j?.jwt) || null;
+        const exp = typeof j === "object" ? Number(j?.exp) : undefined;
+        return token ? { token, exp } : null;
+      } catch { return null; }
+    },
   ];
-
-  let lastErr: unknown = null;
-
-  for (const c of candidates) {
-    try {
-      const init: RequestInit = {
-        method: c.method,
-        headers: { Accept: "application/json" },
-      };
-      if (c.method === "POST") {
-        init.headers = { ...init.headers, "Content-Type": "application/json" };
-        init.body = "{}";
-      }
-      const r = await fetch(c.url, init);
-      if (!r.ok) {
-        lastErr = new Error(`${r.status} ${r.statusText}`);
-        continue;
-      }
-      const ct = (r.headers.get("content-type") || "").toLowerCase();
-      const data = ct.includes("application/json") ? await r.json() : await r.text();
-
-      const token =
-        (typeof data === "string" ? data : data?.token || data?.jwt || data?.guest_token) || null;
-      const exp = typeof data === "object" ? Number(data?.exp) : undefined;
-
-      if (token && String(token).trim()) {
-        writeAllTokens(String(token).trim(), exp || nowSec() + 3600);
-        return String(token).trim();
-      }
-    } catch (e) {
-      lastErr = e;
+  for (const fn of tries) {
+    const got = await fn();
+    if (got?.token) {
+      writeAllTokens(got.token, got.exp || nowSec() + 3600);
+      return got.token;
     }
   }
-  // Surface nothing here; callers can decide to retry.
-  console.debug("mintGuestToken failed", lastErr);
   return null;
 }
 
-/**
- * Ensure there is a token in storage. If `force` is true, always mint a fresh one.
- * We don’t try to validate exp on the guest token unless provided; we simply ensure presence.
- */
+/** Ensure we have *some* token (don’t over-validate expiry for guest). */
 async function ensureAuthToken(force = false): Promise<string | null> {
   if (!force) {
     const t = readAnyToken();
@@ -108,29 +113,55 @@ async function ensureAuthToken(force = false): Promise<string | null> {
   return await mintGuestToken();
 }
 
-/** Build headers; do NOT set content-type for multipart. */
+/** Build headers; never set content-type for multipart. */
 function makeHeaders(): Record<string, string> {
-  const base = authHeaders() as Record<string, string>;
+  const base = (authHeaders() as Record<string, string>) || {};
   const h: Record<string, string> = { Accept: "application/json", ...base };
-
-  // If authHeaders() didn’t inject Authorization (e.g., first-load race), add it.
   if (!("Authorization" in h)) {
     const tok = readAnyToken();
     if (tok) h["Authorization"] = `Bearer ${tok}`;
   }
-
-  // Never pre-set content-type for multipart/form-data
   for (const k of Object.keys(h)) if (k.toLowerCase() === "content-type") delete h[k];
   return h;
 }
 
-// ---- UI helpers -------------------------------------------------------------
+/* ----------------------- Local prompt correlation ------------------------ */
+
+const LS_KEY = "cm_usage_prompts";
+const MAX_PROMPTS = 200;
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readPrompts(): { ts: number; text: string }[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
+    const cutoff = Date.now() - MAX_AGE_MS;
+    return arr.filter(p => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff).slice(-MAX_PROMPTS);
+  } catch { return []; }
+}
+function writePrompts(arr: { ts: number; text: string }[]) {
+  try {
+    const pruned = arr.filter(p => p && typeof p.ts === "number" && typeof p.text === "string").slice(-MAX_PROMPTS);
+    const s = JSON.stringify(pruned);
+    localStorage.setItem(LS_KEY, s);
+    try { window.dispatchEvent(new StorageEvent("storage", { key: LS_KEY, newValue: s })); }
+    catch { window.dispatchEvent(new Event("storage")); }
+  } catch { /* ignore */ }
+}
+function pushPrompt(text: string) {
+  if (!text || !text.trim()) return;
+  const list = readPrompts();
+  list.push({ ts: Date.now(), text: text.trim() });
+  writePrompts(list);
+}
+
+/* --------------------------------- UI ----------------------------------- */
 
 const inputCls =
   "w-full rounded-xl border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 const cardCls = "rounded-2xl border border-slate-200 bg-white shadow-sm";
 
-// ----------------------------------------------------------------------------
+/* -------------------------------- Page ---------------------------------- */
 
 export default function SketchToApp() {
   const [file, setFile] = useState<File | null>(null);
@@ -146,9 +177,20 @@ export default function SketchToApp() {
   const pollTimer = useRef<number | null>(null);
   const pollStart = useRef<number>(0);
 
-  // Kick off auth at mount so first action doesn't 401
+  // Kick off auth on mount so the first upload doesn't 401.
+  useEffect(() => { void ensureAuthToken(); }, []);
+
+  // If we land with ?job=..., restore and poll
   useEffect(() => {
-    void ensureAuthToken();
+    const p = new URLSearchParams(window.location.search);
+    const id = p.get("job");
+    if (id) {
+      setJobId(id);
+      setInfo("Restored job from URL. Polling…");
+      setError(null);
+      startPolling(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchJSON = useCallback(
@@ -168,9 +210,7 @@ export default function SketchToApp() {
 
   const stopPolling = useCallback(() => {
     if (pollAbort.current) {
-      try {
-        pollAbort.current.abort();
-      } catch {}
+      try { pollAbort.current.abort(); } catch { /* no-op */ }
     }
     pollAbort.current = null;
     if (pollTimer.current) {
@@ -184,6 +224,13 @@ export default function SketchToApp() {
       stopPolling();
       pollAbort.current = new AbortController();
       pollStart.current = Date.now();
+
+      // Keep job id in URL so refresh preserves state
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("job", id);
+        window.history.replaceState({}, "", url.toString());
+      } catch { /* ignore */ }
 
       const loop = async () => {
         try {
@@ -243,6 +290,9 @@ export default function SketchToApp() {
       setJob(null);
       setJobId(null);
 
+      // Save prompt for UsageFeed correlation
+      if (prompt && prompt.trim()) pushPrompt(prompt);
+
       const doPost = async () => {
         await ensureAuthToken();
         const form = new FormData();
@@ -260,7 +310,7 @@ export default function SketchToApp() {
       try {
         let r = await doPost();
 
-        // If unauthorized, mint a fresh guest token and retry once
+        // If unauthorized, refresh token and retry once.
         if (r.status === 401 || r.status === 403) {
           await ensureAuthToken(true);
           r = await doPost();
@@ -285,7 +335,8 @@ export default function SketchToApp() {
         setInfo("Uploaded. Processing…");
         startPolling(ok.job_id);
       } catch (e: any) {
-        setError(e?.message || "Upload failed");
+        const msg = e?.message || "Upload failed";
+        setError(msg);
       } finally {
         setBusy(false);
       }
@@ -301,8 +352,21 @@ export default function SketchToApp() {
       setJobId(null);
       const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
       setFile(f);
+      if (f) void upload(f); // auto-start
+    },
+    [upload]
+  );
+
+  const onDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setError(null);
+      setInfo(null);
+      const f = e.dataTransfer.files?.[0];
       if (f) {
-        void upload(f); // auto-start
+        setFile(f);
+        void upload(f);
       }
     },
     [upload]
@@ -354,6 +418,11 @@ export default function SketchToApp() {
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const isDone = job?.status === "done";
+  const progressNum =
+    typeof job?.progress === "number"
+      ? Math.min(100, Math.max(0, Number(job?.progress)))
+      : undefined;
+
   const canManualUpload = useMemo(() => !!file && !busy, [file, busy]);
 
   return (
@@ -386,7 +455,15 @@ export default function SketchToApp() {
             )}
           </div>
 
-          <div className="mt-6 grid gap-5">
+          {/* Dropzone + picker */}
+          <div
+            className="mt-6 grid gap-5"
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onDrop={onDrop}
+          >
             <div>
               <label className="block text-sm font-medium mb-1">Sketch file</label>
               <input
@@ -396,7 +473,7 @@ export default function SketchToApp() {
                 className={inputCls}
               />
               <p className="mt-1 text-xs text-slate-500">
-                Upload starts automatically once you pick a file.
+                Drop a file anywhere on this card, or use the picker. Upload starts automatically.
               </p>
             </div>
 
@@ -428,22 +505,65 @@ export default function SketchToApp() {
 
               {jobId && (
                 <span className="text-sm text-slate-600">
-                  Job: <code className="text-xs">{jobId}</code>
+                  Job:{" "}
+                  <code
+                    className="text-xs select-all"
+                    title="Click and press Ctrl/Cmd+C to copy"
+                  >
+                    {jobId}
+                  </code>
                 </span>
               )}
+
+              {job && !isDone && (
+                <button
+                  type="button"
+                  onClick={stopPolling}
+                  className="rounded-xl px-3 py-1.5 text-slate-700 bg-slate-100 hover:bg-slate-200"
+                  title="Stop polling"
+                >
+                  Stop
+                </button>
+              )}
             </div>
+
+            {/* Progress bar */}
+            {typeof progressNum === "number" && !isDone && (
+              <div className="w-full h-2 rounded bg-slate-200 overflow-hidden">
+                <div
+                  className="h-2 bg-indigo-600 transition-all"
+                  style={{ width: `${progressNum}%` }}
+                />
+              </div>
+            )}
 
             {(job || error || info) && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm space-y-2">
                 {info && <div className="text-slate-700">{info}</div>}
                 {error && <div className="text-rose-600">Error: {error}</div>}
                 {isDone && (
-                  <div className="pt-2">
+                  <div className="pt-2 flex items-center gap-3">
                     <button
                       onClick={onDownload}
                       className="rounded-xl bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
                     >
                       Download result
+                    </button>
+                    <button
+                      onClick={() => {
+                        setJob(null);
+                        setJobId(null);
+                        setInfo(null);
+                        setError(null);
+                        try {
+                          const url = new URL(window.location.href);
+                          url.searchParams.delete("job");
+                          window.history.replaceState({}, "", url.toString());
+                        } catch { /* ignore */ }
+                      }}
+                      className="rounded-xl bg-slate-200 px-3 py-2 text-slate-800 hover:bg-slate-300"
+                    >
+                      Clear
                     </button>
                   </div>
                 )}

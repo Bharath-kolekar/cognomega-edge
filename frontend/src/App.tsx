@@ -9,7 +9,9 @@ import UsageFeed from "./components/UsageFeed";
 import LaunchInBuilder from "./components/LaunchInBuilder";
 
 declare global {
-  interface Window { turnstile?: any }
+  interface Window {
+    turnstile?: any;
+  }
 }
 
 const TS_SITE = ""; // keep empty unless you wire Turnstile
@@ -26,7 +28,7 @@ type UploadResp =
   | { error: string; [k: string]: any };
 
 const POLL_INTERVAL_MS = 1000;
-const POLL_TIMEOUT_MS  = 120_000;
+const POLL_TIMEOUT_MS = 120_000;
 
 // ---- local prompt capture for UsageFeed matching ----
 const LS_KEY = "cm_usage_prompts";
@@ -39,7 +41,12 @@ function readPrompts(): { ts: number; text: string }[] {
     const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
     const cutoff = Date.now() - MAX_AGE_MS;
     return arr
-      .filter(p => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff)
+      .filter(
+        (p) =>
+          typeof p?.ts === "number" &&
+          typeof p?.text === "string" &&
+          p.ts >= cutoff
+      )
       .slice(-MAX_PROMPTS);
   } catch {
     return [];
@@ -48,7 +55,7 @@ function readPrompts(): { ts: number; text: string }[] {
 function writePrompts(arr: { ts: number; text: string }[]) {
   try {
     const pruned = arr
-      .filter(p => p && typeof p.ts === "number" && typeof p.text === "string")
+      .filter((p) => p && typeof p.ts === "number" && typeof p.text === "string")
       .slice(-MAX_PROMPTS);
     const s = JSON.stringify(pruned);
     localStorage.setItem(LS_KEY, s);
@@ -69,34 +76,60 @@ function pushPrompt(text: string) {
   writePrompts(list);
 }
 
+// ---- tiny helpers to de-hardcode values & keep other pages happy ----
+const nowSec = () => Math.floor(Date.now() / 1000);
+function readUserEmail(): string {
+  try {
+    return (
+      localStorage.getItem("user_email") ||
+      localStorage.getItem("email") ||
+      ""
+    )?.trim() || "guest@cognomega.com";
+  } catch {
+    return "guest@cognomega.com";
+  }
+}
+function persistGuestToken(token: string, ttlSec: number) {
+  try {
+    localStorage.setItem("guest_token", token);
+    localStorage.setItem("jwt", token);
+    localStorage.setItem(
+      "cog_auth_jwt",
+      JSON.stringify({ token, exp: nowSec() + ttlSec })
+    );
+  } catch {
+    /* no-op */
+  }
+}
+
 export default function App() {
-  const [ready, setReady]         = useState(false);
-  const [resp, setResp]           = useState<string>("");
-  const [health, setHealth]       = useState<string>("checking...");
-  const [authMsg, setAuthMsg]     = useState<string>("initializing...");
+  const [ready, setReady] = useState(false);
+  const [resp, setResp] = useState<string>("");
+  const [health, setHealth] = useState<string>("checking...");
+  const [authMsg, setAuthMsg] = useState<string>("initializing...");
   const [authReady, setAuthReady] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   // Poll/download UI state (copied from tool page)
   const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob]     = useState<Job | null>(null);
-  const [info, setInfo]   = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Derived status
   const isDone = job?.status === "done";
 
-  const engineRef     = useRef<any>(null);
+  const engineRef = useRef<any>(null);
   const [prompt, setPrompt] = useState("Summarize Cognomega in one line.");
 
-  const fileRef   = useRef<HTMLInputElement | null>(null);
-  const tsDivRef  = useRef<HTMLDivElement | null>(null);
-  const widRef    = useRef<any>(null);
-  const tsExecRef = useRef<Promise<string>|null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const tsDivRef = useRef<HTMLDivElement | null>(null);
+  const widRef = useRef<any>(null);
+  const tsExecRef = useRef<Promise<string> | null>(null);
   const authBusyRef = useRef(false);
 
   // In-memory JWT & timer
-  const jwtRef       = useRef<string>("");
+  const jwtRef = useRef<string>("");
   const refreshTimer = useRef<any>(null);
 
   // Polling refs
@@ -111,69 +144,80 @@ export default function App() {
     return h;
   }, []);
 
-  const fetchJSON = useCallback(async (url: string) => {
-    const r = await fetch(url, { headers: cleanHeaders() });
-    const ct = r.headers.get("content-type") || "";
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    if (!ct.includes("application/json")) {
-      const t = await r.text();
-      throw new Error(`Unexpected content-type: ${ct} | ${t.slice(0, 160)}`);
-    }
-    return r.json();
-  }, [cleanHeaders]);
-
-  const startPolling = useCallback((id: string) => {
-    // clear previous
-    if (pollAbort.current) pollAbort.current.abort();
-    if (pollTimer.current) window.clearTimeout(pollTimer.current);
-
-    pollAbort.current = new AbortController();
-    pollStart.current = Date.now();
-
-    const loop = async () => {
-      try {
-        if (Date.now() - pollStart.current > POLL_TIMEOUT_MS) {
-          setInfo(null);
-          setError("Timed out waiting for job to finish.");
-          return;
-        }
-
-        const j = await fetchJSON(`${apiBase}/api/jobs/${encodeURIComponent(id)}`);
-        const jobObj = (j?.job ?? {}) as any;
-        const next: Job = {
-          id: jobObj.id,
-          status: (jobObj.status || "").toString(),
-          progress: jobObj.progress,
-        };
-        setJob(next);
-
-        if (next.status === "done") {
-          setInfo("Job finished. You can download the result.");
-          return; // stop polling
-        }
-        if (next.status === "error" || next.status === "failed") {
-          setError("Job failed.");
-          return;
-        }
-
-        pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
-      } catch (e: any) {
-        setError(e?.message || "Poll failed");
+  const fetchJSON = useCallback(
+    async (url: string) => {
+      const r = await fetch(url, { headers: cleanHeaders() });
+      const ct = r.headers.get("content-type") || "";
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!ct.includes("application/json")) {
+        const t = await r.text();
+        throw new Error(`Unexpected content-type: ${ct} | ${t.slice(0, 160)}`);
       }
-    };
+      return r.json();
+    },
+    [cleanHeaders]
+  );
 
-    loop().catch(() => {});
-  }, [fetchJSON]);
+  const startPolling = useCallback(
+    (id: string) => {
+      // clear previous
+      if (pollAbort.current) pollAbort.current.abort();
+      if (pollTimer.current) window.clearTimeout(pollTimer.current);
+
+      pollAbort.current = new AbortController();
+      pollStart.current = Date.now();
+
+      const loop = async () => {
+        try {
+          if (Date.now() - pollStart.current > POLL_TIMEOUT_MS) {
+            setInfo(null);
+            setError("Timed out waiting for job to finish.");
+            return;
+          }
+
+          const j = await fetchJSON(
+            `${apiBase}/api/jobs/${encodeURIComponent(id)}`
+          );
+          const jobObj = (j?.job ?? {}) as any;
+          const next: Job = {
+            id: jobObj.id,
+            status: (jobObj.status || "").toString(),
+            progress: jobObj.progress,
+          };
+          setJob(next);
+
+          if (next.status === "done") {
+            setInfo("Job finished. You can download the result.");
+            return; // stop polling
+          }
+          if (next.status === "error" || next.status === "failed") {
+            setError("Job failed.");
+            return;
+          }
+
+          pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
+        } catch (e: any) {
+          setError(e?.message || "Poll failed");
+        }
+      };
+
+      loop().catch(() => {});
+    },
+    [fetchJSON]
+  );
 
   const onDownload = useCallback(async () => {
     if (!jobId) return;
     setError(null);
     setInfo("Preparing download…");
     try {
-      const r = await fetch(`${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`, {
-        method: "GET",
-        headers: cleanHeaders(),
-      });
+      const r = await fetch(
+        `${apiBase}/api/jobs/${encodeURIComponent(jobId)}/download`,
+        {
+          method: "GET",
+          headers: cleanHeaders(),
+        }
+      );
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
 
       const cd = r.headers.get("content-disposition") || "";
@@ -228,8 +272,8 @@ export default function App() {
   useEffect(() => {
     // Health
     fetch(`${DEFAULT_API}/ready`)
-      .then(r => r.json())
-      .then(j => setHealth(JSON.stringify(j)))
+      .then((r) => r.json())
+      .then((j) => setHealth(JSON.stringify(j)))
       .catch(() => setHealth("down"));
 
     // WebLLM (best-effort)
@@ -253,10 +297,14 @@ export default function App() {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
           widRef.current = window.turnstile.render(tsDivRef.current, {
             sitekey: TS_SITE,
-            appearance: "execute", size: "flexible",
+            appearance: "execute",
+            size: "flexible",
           });
 
-          if (fb) { clearTimeout(fb); fb = null; }
+          if (fb) {
+            clearTimeout(fb);
+            fb = null;
+          }
           clearInterval(iv);
           iv = null;
           refreshJwt(); // proceed once widget rendered
@@ -287,7 +335,9 @@ export default function App() {
     if (tsExecRef.current) return tsExecRef.current;
     tsExecRef.current = new Promise<string>((resolve) => {
       try {
-        try { window.turnstile.reset(widRef.current); } catch {}
+        try {
+          window.turnstile.reset(widRef.current);
+        } catch {}
         window.turnstile.execute(widRef.current, {
           async: true,
           action: "guest",
@@ -296,7 +346,9 @@ export default function App() {
       } catch {
         resolve("");
       }
-    }).finally(() => { tsExecRef.current = null; });
+    }).finally(() => {
+      tsExecRef.current = null;
+    });
     return tsExecRef.current;
   };
 
@@ -307,7 +359,11 @@ export default function App() {
     try {
       setAuthMsg("auth: requesting token...");
       let ts = "";
-      try { ts = await getTurnstileToken(); } catch { ts = ""; }
+      try {
+        ts = await getTurnstileToken();
+      } catch {
+        ts = "";
+      }
       const r = await fetch(`${DEFAULT_API}/auth/guest`, {
         method: "POST",
         headers: ts ? { "CF-Turnstile-Token": ts } : {},
@@ -316,8 +372,12 @@ export default function App() {
       const j = await r.json();
       jwtRef.current = j.token;
       setAuthReady(true);
-      const ttl = Math.max(60, (j.expires_in ?? 600));
+      const ttl = Math.max(60, j.expires_in ?? 600);
       setAuthMsg(`token ready (exp ${ttl}s)`);
+
+      // Persist for other pages/components (SketchToApp etc.)
+      persistGuestToken(jwtRef.current, ttl);
+
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       const next = Math.max(10, ttl - 60);
       refreshTimer.current = setTimeout(refreshJwt, next * 1000);
@@ -336,16 +396,26 @@ export default function App() {
     // Capture the prompt locally so UsageFeed can show context immediately
     if (prompt && prompt.trim()) pushPrompt(prompt.trim());
 
+    const email = readUserEmail();
     try {
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        "x-user-email": email,
+      };
+      if (jwtRef.current) headers["Authorization"] = `Bearer ${jwtRef.current}`;
+
       const r = await fetch(DEFAULT_API + "/api/si/ask", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-user-email": "vihaan@cognomega.com" },
-        body: JSON.stringify({ skill: "summarize", input: prompt })
+        headers,
+        body: JSON.stringify({ skill: "summarize", input: prompt }),
       });
       const j = await r.json();
       const used = r.headers.get("X-Credits-Used") || "";
-      const bal  = r.headers.get("X-Credits-Balance") || "";
-      setResp((j.result?.content ?? JSON.stringify(j)) + (used ? "\n\n[used: " + used + " | balance: " + bal + "]" : ""));
+      const bal = r.headers.get("X-Credits-Balance") || "";
+      setResp(
+        (j.result?.content ?? JSON.stringify(j)) +
+          (used ? "\n\n[used: " + used + " | balance: " + bal + "]" : "")
+      );
     } catch (e: any) {
       setResp("Error: " + (e?.message ?? String(e)));
     }
@@ -355,7 +425,8 @@ export default function App() {
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
-    if (!authReady || !jwtRef.current) return alert("Still obtaining auth… try again in a moment.");
+    if (!authReady || !jwtRef.current)
+      return alert("Still obtaining auth… try again in a moment.");
     setUploading(true);
     setError(null);
     setInfo("Uploading…");
@@ -366,7 +437,11 @@ export default function App() {
       const fd = new FormData();
       fd.append("file", f);
       let ts = "";
-      try { ts = await getTurnstileToken(); } catch { ts = ""; }
+      try {
+        ts = await getTurnstileToken();
+      } catch {
+        ts = "";
+      }
 
       const r = await fetch(`${apiBase}/v1/files/upload`, {
         method: "POST",
@@ -381,12 +456,16 @@ export default function App() {
       const ct = r.headers.get("content-type") || "";
       if (!ct.includes("application/json")) {
         const text = await r.text();
-        throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
+        throw new Error(
+          `Unexpected content-type: ${ct} | ${text.slice(0, 160)}`
+        );
       }
 
       const j: UploadResp = await r.json();
       if (!r.ok || (j as any).error) {
-        const msg = (j as any).error ? String((j as any).error) : `${r.status} ${r.statusText}`;
+        const msg = (j as any).error
+          ? String((j as any).error)
+          : `${r.status} ${r.statusText}`;
         throw new Error(msg);
       }
 
@@ -419,7 +498,8 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h1 style={{ margin: 0 }}>Cognomega</h1>
         <div style={{ marginLeft: "auto" }}>
-          <CreditPill email="vihaan@cognomega.com" apiBase={DEFAULT_API} />
+          {/* CreditPill now self-manages; no props */}
+          <CreditPill />
         </div>
       </div>
 
@@ -451,13 +531,18 @@ export default function App() {
             }
           }}
         />
-        <button onClick={ask}>
-          Ask
-        </button>
+        <button onClick={ask}>Ask</button>
       </div>
 
       {/* Real-time App Builder launcher */}
-      <div style={{ marginTop: 12, padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
+      <div
+        style={{
+          marginTop: 12,
+          padding: 12,
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+        }}
+      >
         <LaunchInBuilder
           defaultName="Sketch Prototype"
           defaultPages="Home,Dashboard,Chat"
@@ -476,20 +561,37 @@ export default function App() {
       >
         {resp}
       </pre>
-      <UsageFeed email="vihaan@cognomega.com" apiBase={DEFAULT_API}  refreshMs={3000} />
+
+      <UsageFeed
+        email={readUserEmail()}
+        apiBase={DEFAULT_API}
+        refreshMs={3000}
+      />
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <label>Upload file (to R2 via API): </label>
         <input type="file" ref={fileRef} required />
-        <button type="button" onClick={upload} disabled={!authReady || uploading}>
+        <button
+          type="button"
+          onClick={upload}
+          disabled={!authReady || uploading}
+        >
           {uploading ? "Uploading..." : "Upload"}
         </button>
       </div>
 
       {/* Lightweight status block (useful if navigation is blocked) */}
       {(jobId || job || error || info) && (
-        <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 8, background: "#fafafa" }}>
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            border: "1px solid #ddd",
+            borderRadius: 8,
+            background: "#fafafa",
+          }}
+        >
           {jobId && (
             <div style={{ fontSize: 12, color: "#555", marginBottom: 6 }}>
               Job: <code style={{ fontSize: 11 }}>{jobId}</code>
@@ -499,15 +601,20 @@ export default function App() {
             <>
               <div style={{ fontSize: 14 }}>
                 <strong>Status:</strong> {job.status}
-                {typeof job.progress !== "undefined" && job.progress !== null && (
-                  <> — {String(job.progress)}%</>
-                )}
+                {typeof job.progress !== "undefined" &&
+                  job.progress !== null && <> — {String(job.progress)}%</>}
               </div>
               {isDone && (
                 <div style={{ paddingTop: 8 }}>
                   <button
                     onClick={onDownload}
-                    style={{ padding: "8px 12px", borderRadius: 6, background: "#16a34a", color: "#fff", border: 0 }}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      background: "#16a34a",
+                      color: "#fff",
+                      border: 0,
+                    }}
                   >
                     Download result
                   </button>
@@ -515,8 +622,16 @@ export default function App() {
               )}
             </>
           )}
-          {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
-          {error && <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>Error: {error}</div>}
+          {info && (
+            <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>
+              {info}
+            </div>
+          )}
+          {error && (
+            <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>
+              Error: {error}
+            </div>
+          )}
         </div>
       )}
 
