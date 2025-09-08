@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import { apiBase, apiUrl, readUserEmail } from "./lib/api/apiBase";
+import { apiBase, apiUrl, readUserEmail, ensureApiBase, currentApiBase } from "./lib/api/apiBase";
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -130,6 +130,7 @@ export default function App() {
   const [authMsg, setAuthMsg] = useState<string>("initializing...");
   const [authReady, setAuthReady] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [resolvedBase, setResolvedBase] = useState<string>(apiBase);
 
   // Poll/download UI state (copied from tool page)
   const [jobId, setJobId] = useState<string | null>(null);
@@ -285,26 +286,34 @@ export default function App() {
   // ---------- health probe & boot ----------
   useEffect(() => {
     (async () => {
+      // Ensure API base is resolved before health checks
+      try {
+        await ensureApiBase();
+        setResolvedBase(currentApiBase());
+      } catch {}
+
       // Wait for auth bootstrap if main.tsx exposed it
       try {
         await (window as any).__cogAuthReady;
       } catch {}
-      // Health probe tries multiple known paths
+
+      // Health probe tries multiple known paths, but accepts JSON only
       const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
+      let reported = false;
       for (const p of paths) {
         try {
           const r = await fetch(apiUrl(p), { headers: { Accept: "application/json" } });
-          const ct = r.headers.get("content-type") || "";
-          const data = ct.includes("application/json") ? await r.json() : await r.text();
-          if (r.ok) {
-            setHealth(typeof data === "string" ? data : JSON.stringify(data));
-            break;
-          }
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+          if (!r.ok || !ct.includes("application/json")) continue;
+          const data = await r.json();
+          setHealth(JSON.stringify(data));
+          reported = true;
+          break;
         } catch {
           // try next
         }
       }
-      setHealth((h) => (h === "checking..." ? "down" : h));
+      setHealth((h) => (reported ? h : "down"));
     })();
 
     // WebLLM (best-effort)
@@ -326,7 +335,7 @@ export default function App() {
     if (TS_SITE) {
       iv = setInterval(() => {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
-          widRef.current = window.turnstile.render(tsDivRefRef.current, {
+          widRef.current = window.turnstile.render(tsDivRef.current, {
             sitekey: TS_SITE,
             appearance: "execute",
             size: "flexible",
@@ -612,7 +621,7 @@ export default function App() {
         {resp}
       </pre>
 
-      <UsageFeed email={readUserEmail()} apiBase={apiBase} refreshMs={3000} />
+      <UsageFeed email={readUserEmail()} apiBase={resolvedBase || apiBase} refreshMs={3000} />
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
