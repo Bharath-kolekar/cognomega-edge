@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import { apiBase, apiUrl } from "./lib/api/apiBase";
+import { apiBase, apiUrl, readUserEmail } from "./lib/api/apiBase";
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -11,6 +11,7 @@ import LaunchInBuilder from "./components/LaunchInBuilder";
 declare global {
   interface Window {
     turnstile?: any;
+    __cogAuthReady?: Promise<string | null>;
   }
 }
 
@@ -40,12 +41,7 @@ function readPrompts(): { ts: number; text: string }[] {
     const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
     const cutoff = Date.now() - MAX_AGE_MS;
     return arr
-      .filter(
-        (p) =>
-          typeof p?.ts === "number" &&
-          typeof p?.text === "string" &&
-          p.ts >= cutoff
-      )
+      .filter((p) => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff)
       .slice(-MAX_PROMPTS);
   } catch {
     return [];
@@ -58,7 +54,6 @@ function writePrompts(arr: { ts: number; text: string }[]) {
       .slice(-MAX_PROMPTS);
     const s = JSON.stringify(pruned);
     localStorage.setItem(LS_KEY, s);
-    // Nudge same-tab listeners (StorageEvent normally fires only cross-document)
     try {
       const ev = new StorageEvent("storage", { key: LS_KEY, newValue: s });
       window.dispatchEvent(ev);
@@ -66,28 +61,18 @@ function writePrompts(arr: { ts: number; text: string }[]) {
       window.dispatchEvent(new Event("storage"));
     }
   } catch {
-    // ignore
+    /* ignore */
   }
 }
 function pushPrompt(text: string) {
+  if (!text || !text.trim()) return;
   const list = readPrompts();
-  list.push({ ts: Date.now(), text });
+  list.push({ ts: Date.now(), text: text.trim() });
   writePrompts(list);
 }
 
-// ---- tiny helpers to de-hardcode values & keep other pages happy ----
+// ---- tiny helpers for guest token persistence ----
 const nowSec = () => Math.floor(Date.now() / 1000);
-function readUserEmail(): string {
-  try {
-    return (
-      localStorage.getItem("user_email") ||
-      localStorage.getItem("email") ||
-      ""
-    )?.trim() || "guest@cognomega.com";
-  } catch {
-    return "guest@cognomega.com";
-  }
-}
 function persistGuestToken(token: string, ttlSecOrExp: number) {
   try {
     const exp =
@@ -95,6 +80,15 @@ function persistGuestToken(token: string, ttlSecOrExp: number) {
     localStorage.setItem("guest_token", token);
     localStorage.setItem("jwt", token);
     localStorage.setItem("cog_auth_jwt", JSON.stringify({ token, exp }));
+    try {
+      const ev = new StorageEvent("storage", {
+        key: "cog_auth_jwt",
+        newValue: JSON.stringify({ token, exp }),
+      });
+      window.dispatchEvent(ev);
+    } catch {
+      window.dispatchEvent(new Event("storage"));
+    }
   } catch {
     /* no-op */
   }
@@ -219,7 +213,7 @@ export default function App() {
         }
       };
 
-      loop().catch(() => {});
+      void loop();
     },
     [fetchJSON]
   );
@@ -285,8 +279,12 @@ export default function App() {
 
   // ---------- health probe & boot ----------
   useEffect(() => {
-    // Health probe tries multiple known paths via apiUrl()
     (async () => {
+      // Wait for auth bootstrap if main.tsx exposed it
+      try {
+        await (window as any).__cogAuthReady;
+      } catch {}
+      // Health probe tries multiple known paths
       const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
       for (const p of paths) {
         try {
@@ -301,7 +299,6 @@ export default function App() {
           // try next
         }
       }
-      // If still not set, mark down
       setHealth((h) => (h === "checking..." ? "down" : h));
     })();
 
@@ -453,7 +450,6 @@ export default function App() {
 
   const ask = async () => {
     setResp("...");
-    // Capture the prompt locally so UsageFeed can show context immediately
     if (prompt && prompt.trim()) pushPrompt(prompt.trim());
 
     const email = readUserEmail();
@@ -485,8 +481,7 @@ export default function App() {
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
-    if (!authReady || !jwtRef.current)
-      return alert("Still obtaining auth… try again in a moment.");
+    if (!authReady || !jwtRef.current) return alert("Still obtaining auth… try again in a moment.");
     setUploading(true);
     setError(null);
     setInfo("Uploading…");
@@ -611,21 +606,13 @@ export default function App() {
         {resp}
       </pre>
 
-      <UsageFeed
-        email={readUserEmail()}
-        apiBase={apiBase}
-        refreshMs={3000}
-      />
+      <UsageFeed email={readUserEmail()} apiBase={apiBase} refreshMs={3000} />
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <label>Upload file (to R2 via API): </label>
         <input type="file" ref={fileRef} required />
-        <button
-          type="button"
-          onClick={upload}
-          disabled={!authReady || uploading}
-        >
+        <button type="button" onClick={upload} disabled={!authReady || uploading}>
           {uploading ? "Uploading..." : "Upload"}
         </button>
       </div>
@@ -650,8 +637,7 @@ export default function App() {
             <>
               <div style={{ fontSize: 14 }}>
                 <strong>Status:</strong> {job.status}
-                {typeof job.progress !== "undefined" &&
-                  job.progress !== null && <> — {String(job.progress)}%</>}
+                {typeof job.progress !== "undefined" && job.progress !== null && <> — {String(job.progress)}%</>}
               </div>
               {isDone && (
                 <div style={{ paddingTop: 8 }}>
@@ -671,16 +657,8 @@ export default function App() {
               )}
             </>
           )}
-          {info && (
-            <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>
-              {info}
-            </div>
-          )}
-          {error && (
-            <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>
-              Error: {error}
-            </div>
-          )}
+          {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
+          {error && <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>Error: {error}</div>}
         </div>
       )}
 
