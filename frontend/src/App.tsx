@@ -89,16 +89,39 @@ function readUserEmail(): string {
     return "guest@cognomega.com";
   }
 }
-function persistGuestToken(token: string, ttlSec: number) {
+function persistGuestToken(token: string, ttlSecOrExp: number) {
   try {
+    const exp =
+      ttlSecOrExp > 2_000_000_000 /* looks like epoch? */ ? ttlSecOrExp : nowSec() + ttlSecOrExp;
     localStorage.setItem("guest_token", token);
     localStorage.setItem("jwt", token);
-    localStorage.setItem(
-      "cog_auth_jwt",
-      JSON.stringify({ token, exp: nowSec() + ttlSec })
-    );
+    localStorage.setItem("cog_auth_jwt", JSON.stringify({ token, exp }));
   } catch {
     /* no-op */
+  }
+}
+
+// Normalize any API response (string or object) to {token, ttl}
+function extractToken(result: any): { token: string; ttl: number } | null {
+  try {
+    if (!result) return null;
+    const tokenRaw =
+      typeof result === "string"
+        ? result
+        : result.token || result.jwt || result.guest_token || result.access_token;
+    if (!tokenRaw || typeof tokenRaw !== "string") return null;
+
+    // Prefer absolute exp; otherwise expires_in; otherwise default 600s
+    let ttl = 600;
+    const now = nowSec();
+    const expAbs = Number(result.exp || result.expires_at);
+    const expRel = Number(result.expires_in);
+    if (Number.isFinite(expAbs) && expAbs > now) ttl = expAbs - now;
+    else if (Number.isFinite(expRel) && expRel > 0) ttl = expRel;
+
+    return { token: tokenRaw, ttl: Math.max(60, ttl) };
+  } catch {
+    return null;
   }
 }
 
@@ -137,9 +160,8 @@ export default function App() {
   const pollTimer = useRef<number | null>(null);
   const pollStart = useRef<number>(0);
 
-  // ---------- helpers (copied to match tool page) ----------
+  // ---------- helpers ----------
   const cleanHeaders = useCallback(() => {
-    // Keep it simple for GETs; never force Content-Type on multipart
     const h: Record<string, string> = { Accept: "application/json" };
     return h;
   }, []);
@@ -160,7 +182,6 @@ export default function App() {
 
   const startPolling = useCallback(
     (id: string) => {
-      // clear previous
       if (pollAbort.current) pollAbort.current.abort();
       if (pollTimer.current) window.clearTimeout(pollTimer.current);
 
@@ -268,13 +289,27 @@ export default function App() {
     }
   }, [jobId, isDone, onDownload]);
 
-  // ---------- original app boot (health, WebLLM, auth/turnstile) ----------
+  // ---------- health probe & boot ----------
   useEffect(() => {
-    // Health
-    fetch(`${DEFAULT_API}/ready`)
-      .then((r) => r.json())
-      .then((j) => setHealth(JSON.stringify(j)))
-      .catch(() => setHealth("down"));
+    // Health probe tries multiple known paths
+    (async () => {
+      const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
+      for (const p of paths) {
+        try {
+          const r = await fetch(`${DEFAULT_API}${p}`, { headers: { Accept: "application/json" } });
+          const ct = r.headers.get("content-type") || "";
+          const data = ct.includes("application/json") ? await r.json() : await r.text();
+          if (r.ok) {
+            setHealth(typeof data === "string" ? data : JSON.stringify(data));
+            break;
+          }
+        } catch {
+          // try next
+        }
+      }
+      // If still not set, mark down
+      setHealth((h) => (h === "checking..." ? "down" : h));
+    })();
 
     // WebLLM (best-effort)
     (async () => {
@@ -352,34 +387,65 @@ export default function App() {
     return tsExecRef.current;
   };
 
-  // NOTE: removed the VITE_ENABLE_GUEST_AUTH gate — we always fetch a guest token
+  // ---- Guest auth: try multiple endpoints & methods (fixes 405) ----
+  async function fetchGuestTokenMulti(): Promise<{ token: string; ttl: number } | null> {
+    let ts = "";
+    try {
+      ts = await getTurnstileToken();
+    } catch {
+      ts = "";
+    }
+
+    const baseHeaders = {
+      Accept: "application/json",
+      ...(ts ? { "CF-Turnstile-Token": ts } : {}),
+    } as Record<string, string>;
+
+    const candidates: Array<{ url: string; method: "GET" | "POST" }> = [
+      { url: `${DEFAULT_API}/auth/guest`, method: "GET" },
+      { url: `${DEFAULT_API}/auth/guest`, method: "POST" },
+      { url: `${DEFAULT_API}/api/auth/guest`, method: "GET" },
+      { url: `${DEFAULT_API}/api/auth/guest`, method: "POST" },
+      { url: `${DEFAULT_API}/api/gen-jwt`, method: "GET" },
+      { url: `${DEFAULT_API}/gen-jwt`, method: "GET" },
+    ];
+
+    for (const c of candidates) {
+      try {
+        const init: RequestInit = { method: c.method, headers: { ...baseHeaders } };
+        if (c.method === "POST") {
+          (init.headers as Record<string, string>)["Content-Type"] = "application/json";
+          init.body = "{}";
+        }
+        const r = await fetch(c.url, init);
+        const ct = r.headers.get("content-type") || "";
+        const data: any = ct.includes("application/json") ? await r.json() : await r.text();
+        if (!r.ok) continue;
+
+        const parsed = extractToken(data);
+        if (parsed?.token) return parsed;
+      } catch {
+        // try next
+      }
+    }
+    return null;
+  }
+
   const refreshJwt = async () => {
     if (authBusyRef.current) return;
     authBusyRef.current = true;
     try {
       setAuthMsg("auth: requesting token...");
-      let ts = "";
-      try {
-        ts = await getTurnstileToken();
-      } catch {
-        ts = "";
-      }
-      const r = await fetch(`${DEFAULT_API}/auth/guest`, {
-        method: "POST",
-        headers: ts ? { "CF-Turnstile-Token": ts } : {},
-      });
-      if (!r.ok) throw new Error(`auth failed: ${r.status}`);
-      const j = await r.json();
-      jwtRef.current = j.token;
+      const got = await fetchGuestTokenMulti();
+      if (!got) throw new Error("auth failed");
+
+      jwtRef.current = got.token;
+      persistGuestToken(jwtRef.current, got.ttl);
       setAuthReady(true);
-      const ttl = Math.max(60, j.expires_in ?? 600);
-      setAuthMsg(`token ready (exp ${ttl}s)`);
 
-      // Persist for other pages/components (SketchToApp etc.)
-      persistGuestToken(jwtRef.current, ttl);
-
+      setAuthMsg(`token ready (exp ${got.ttl}s)`);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      const next = Math.max(10, ttl - 60);
+      const next = Math.max(10, got.ttl - 60);
       refreshTimer.current = setTimeout(refreshJwt, next * 1000);
     } catch (e: any) {
       const msg = e?.message || e;
@@ -436,19 +502,12 @@ export default function App() {
     try {
       const fd = new FormData();
       fd.append("file", f);
-      let ts = "";
-      try {
-        ts = await getTurnstileToken();
-      } catch {
-        ts = "";
-      }
 
       const r = await fetch(`${apiBase}/v1/files/upload`, {
         method: "POST",
         headers: {
           // DO NOT set Content-Type for multipart
           Authorization: `Bearer ${jwtRef.current}`,
-          ...(ts ? { "CF-Turnstile-Token": ts } : {}),
         },
         body: fd,
       });
@@ -456,16 +515,12 @@ export default function App() {
       const ct = r.headers.get("content-type") || "";
       if (!ct.includes("application/json")) {
         const text = await r.text();
-        throw new Error(
-          `Unexpected content-type: ${ct} | ${text.slice(0, 160)}`
-        );
+        throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
       }
 
       const j: UploadResp = await r.json();
       if (!r.ok || (j as any).error) {
-        const msg = (j as any).error
-          ? String((j as any).error)
-          : `${r.status} ${r.statusText}`;
+        const msg = (j as any).error ? String((j as any).error) : `${r.status} ${r.statusText}`;
         throw new Error(msg);
       }
 
