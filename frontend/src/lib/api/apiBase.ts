@@ -70,12 +70,15 @@ export function setApiBase(next?: string) {
 
 /**
  * Build a fully-qualified API URL for a given path.
- * Always re-reads the base so updates take effect immediately.
+ * - Absolute URLs pass through unchanged.
+ * - Always re-reads the base so updates take effect immediately.
  */
 export function apiUrl(path: string): string {
+  const p = String(path || "");
+  if (/^https?:\/\//i.test(p)) return p; // absolute passthrough
   const base = currentApiBase();
-  if (!base) return path; // same-origin (reverse-proxy scenario)
-  return base.replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
+  if (!base) return p.startsWith("/") ? p : `/${p}`; // same-origin (reverse-proxy)
+  return base.replace(/\/+$/, "") + "/" + p.replace(/^\/+/, "");
 }
 
 /**
@@ -209,7 +212,8 @@ export function jsonRequest(body: unknown): RequestInit {
 /** Best-effort email used by analytics/usage. */
 export function readUserEmail(): string {
   try {
-    const a = (localStorage.getItem("user_email") || localStorage.getItem("email") || "").trim();
+    const a =
+      (localStorage.getItem("user_email") || localStorage.getItem("email") || "").trim();
     return a || "guest@cognomega.com";
   } catch {
     return "guest@cognomega.com";
