@@ -1,5 +1,9 @@
 // frontend/src/App.tsx
+<<<<<<< HEAD
 import { apiBase, apiUrl, readUserEmail, ensureApiBase, currentApiBase } from "./lib/api/apiBase";
+=======
+import { apiBase, apiUrl, readUserEmail } from "./lib/api/apiBase";
+>>>>>>> origin/main
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -41,12 +45,7 @@ function readPrompts(): { ts: number; text: string }[] {
     const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
     const cutoff = Date.now() - MAX_AGE_MS;
     return arr
-      .filter(
-        (p) =>
-          typeof p?.ts === "number" &&
-          typeof p?.text === "string" &&
-          p.ts >= cutoff
-      )
+      .filter((p) => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff)
       .slice(-MAX_PROMPTS);
   } catch {
     return [];
@@ -286,16 +285,20 @@ export default function App() {
   // ---------- health probe & boot ----------
   useEffect(() => {
     (async () => {
+<<<<<<< HEAD
       // Ensure API base is resolved before health checks
       try {
         await ensureApiBase();
         setResolvedBase(currentApiBase());
       } catch {}
 
+=======
+>>>>>>> origin/main
       // Wait for auth bootstrap if main.tsx exposed it
       try {
         await (window as any).__cogAuthReady;
       } catch {}
+<<<<<<< HEAD
 
       // Health probe tries multiple known paths, but accepts JSON only
       const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
@@ -309,11 +312,28 @@ export default function App() {
           setHealth(JSON.stringify(data));
           reported = true;
           break;
+=======
+      // Health probe tries multiple known paths
+      const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
+      for (const p of paths) {
+        try {
+          const r = await fetch(apiUrl(p), { headers: { Accept: "application/json" } });
+          const ct = r.headers.get("content-type") || "";
+          const data = ct.includes("application/json") ? await r.json() : await r.text();
+          if (r.ok) {
+            setHealth(typeof data === "string" ? data : JSON.stringify(data));
+            break;
+          }
+>>>>>>> origin/main
         } catch {
           // try next
         }
       }
+<<<<<<< HEAD
       setHealth((h) => (reported ? h : "down"));
+=======
+      setHealth((h) => (h === "checking..." ? "down" : h));
+>>>>>>> origin/main
     })();
 
     // WebLLM (best-effort)
@@ -335,7 +355,7 @@ export default function App() {
     if (TS_SITE) {
       iv = setInterval(() => {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
-          widRef.current = window.turnstile.render(tsDivRef.current, {
+          widRef.current = window.turnstile.render(tsDivRefRef.current, {
             sitekey: TS_SITE,
             appearance: "execute",
             size: "flexible",
@@ -495,8 +515,7 @@ export default function App() {
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
-    if (!authReady || !jwtRef.current)
-      return alert("Still obtaining auth… try again in a moment.");
+    if (!authReady || !jwtRef.current) return alert("Still obtaining auth… try again in a moment.");
     setUploading(true);
     setError(null);
     setInfo("Uploading…");
@@ -621,7 +640,11 @@ export default function App() {
         {resp}
       </pre>
 
+<<<<<<< HEAD
       <UsageFeed email={readUserEmail()} apiBase={resolvedBase || apiBase} refreshMs={3000} />
+=======
+      <UsageFeed email={readUserEmail()} apiBase={apiBase} refreshMs={3000} />
+>>>>>>> origin/main
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -672,16 +695,8 @@ export default function App() {
               )}
             </>
           )}
-          {info && (
-            <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>
-              {info}
-            </div>
-          )}
-          {error && (
-            <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>
-              Error: {error}
-            </div>
-          )}
+          {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
+          {error && <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>Error: {error}</div>}
         </div>
       )}
 

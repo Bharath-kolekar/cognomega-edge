@@ -74,11 +74,21 @@ export function setApiBase(next?: string) {
  * - Always re-reads the base so updates take effect immediately.
  */
 export function apiUrl(path: string): string {
+<<<<<<< HEAD
   const p = String(path || "");
   if (/^https?:\/\//i.test(p)) return p; // absolute passthrough
   const base = currentApiBase();
   if (!base) return p.startsWith("/") ? p : `/${p}`; // same-origin (reverse-proxy)
   return base.replace(/\/+$/, "") + "/" + p.replace(/^\/+/, "");
+=======
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = currentApiBase();
+  if (!base) {
+    // same-origin (reverse-proxy scenario) — return a clean leading-slash path
+    return `/${String(path || "").replace(/^\/+/, "")}`;
+  }
+  return base.replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
+>>>>>>> origin/main
 }
 
 /**
