@@ -300,7 +300,7 @@ export default function App() {
       } catch {}
 
       // Health probe: try multiple endpoints, accept JSON only
-      const paths = ["/ready", "/api/ready", "/healthz", "/api/healthz"];
+      const paths = ["/ready", "/api/ready", "/health", "/api/health", "/healthz", "/api/healthz"];
       let reported = false;
       for (const p of paths) {
         try {
