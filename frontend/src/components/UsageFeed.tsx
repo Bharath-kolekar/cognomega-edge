@@ -1,9 +1,10 @@
 // frontend/src/components/UsageFeed.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiUrl } from "../lib/api/apiBase";
 
 type Props = {
   email: string;       // e.g. "vihaan@cognomega.com"
-  apiBase: string;     // e.g. "https://api.cognomega.com"
+  apiBase: string;     // e.g. "https://api.cognomega.com" (optional at runtime; apiUrl() will be used if empty)
   refreshMs?: number;  // optional, defaults to 15s
 };
 
@@ -86,6 +87,14 @@ function buildHeaders(email?: string): Record<string, string> {
   return h;
 }
 
+/* --------------------------- URL construction --------------------------- */
+function joinBase(base: string | undefined, path: string): string {
+  const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
+  const b = (base || "").trim();
+  if (!b) return apiUrl(cleanPath);
+  return `${b.replace(/\/+$/, "")}${cleanPath}`;
+}
+
 /* --------------------------------- UI ---------------------------------- */
 export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) {
   const [items, setItems] = useState<UsageEvent[]>([]);
@@ -105,20 +114,43 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const r = await fetch(`${apiBase}/api/billing/usage`, {
-        method: "GET",
-        headers: buildHeaders(email),
-        cache: "no-store",
-        signal: ac.signal,
-      });
+      // Try a few likely endpoints; first JSON 2xx wins.
+      const candidates = [
+        joinBase(apiBase, "/api/billing/usage"),
+        joinBase(apiBase, "/billing/usage"),
+        joinBase(apiBase, "/api/usage"),
+        joinBase(apiBase, "/usage"),
+      ];
 
-      const ct = r.headers.get("content-type") || "";
-      const isJson = ct.toLowerCase().includes("application/json");
-      const data: any = isJson ? await r.json() : await r.text();
+      let response: Response | null = null;
+      let data: any = null;
 
-      if (!r.ok) {
-        const m = isJson && data?.error ? String(data.error) : `${r.status} ${r.statusText}`;
-        throw new Error(m);
+      for (const url of candidates) {
+        try {
+          const r = await fetch(url, {
+            method: "GET",
+            headers: buildHeaders(email),
+            cache: "no-store",
+            signal: ac.signal,
+          });
+
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+          const isJson = ct.includes("application/json");
+          const parsed = isJson ? await r.json() : await r.text();
+
+          if (r.ok && isJson) {
+            response = r;
+            data = parsed;
+            break;
+          }
+          // If not ok, keep trying next candidate
+        } catch {
+          // continue
+        }
+      }
+
+      if (!response) {
+        throw new Error("usage endpoint not found");
       }
 
       const list: UsageEvent[] = Array.isArray(data) ? data : (data?.events ?? []);
