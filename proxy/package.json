@@ -1,0 +1,14 @@
+﻿{
+  "name": "cognomega-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "node-fetch": "^2.7.0"
+  }
+}
