@@ -31,3 +31,5 @@ api/config/*key*
 Thumbs.db
 *.zip
 *.tar.gz
+
+frontend/node_modules._old_*/
