@@ -1,24 +1,43 @@
-﻿name = "cognomega-api"
-main = "src/index.ts"
-compatibility_date = "2025-09-03"
+﻿# wrangler.toml — Cognomega API Worker (prod)
 
-[vars]
-# Optional: set at deploy-time via wrangler secret put instead.
-# LLM_BASE_URL = "https://your-llm-router.example.com"
-# LLM_COMPLETE_PATH = "/api/v1/llm/complete"
+name                = "cognomega-api"
+main                = "src/index.ts"
+compatibility_date  = "2025-09-03"
+workers_dev         = false         # we use zone routes instead of *.workers.dev
+logpush             = true          # enable Logpush (optional; safe to keep)
 
-# If you also want R2 in this worker later:
-# [[r2_buckets]]
-# binding = "R2"
-# bucket_name = "cognomega-prod"
+# Route *everything* under api.cognomega.com to this Worker
+routes = [
+  { pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }
+]
 
+# --- Bindings ---
 
+# Cloudflare AI (used by some endpoints; safe to keep even if unused)
 [ai]
 binding = "AI"
 
-routes = [{ pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }]
+# R2 bucket (present + ready; keep if you plan to stream uploads/exports)
+[[r2_buckets]]
+binding     = "R2"
+bucket_name = "cognomega-prod"
+
+# Static, non-secret config can live here (optional).
+[vars]
+# If your code reads these, you can configure CORS w/o redeploying code.
+# ALLOWED_ORIGINS = "https://app.cognomega.com,https://builder.cognomega.com,http://localhost:5174,http://localhost:5173"
+# TOKEN_TTL_SEC   = "3600"
+
+# If you use scheduled jobs (e.g., usage rollups), keep this.
 [triggers]
 crons = ["*/5 * * * *"]
-[[r2_buckets]]
-binding = "R2"
-bucket_name = "cognomega-prod"
+
+# ---- Optional: environment blocks (uncomment if you want per-env routes) ----
+# [env.staging]
+# name    = "cognomega-api-staging"
+# routes  = [{ pattern = "staging-api.cognomega.com/*", zone_name = "cognomega.com" }]
+# workers_dev = false
+#
+# [env.dev]
+# name    = "cognomega-api-dev"
+# workers_dev = true

@@ -1,4 +1,4 @@
-// frontend/src/App.tsx
+﻿// frontend/src/App.tsx
 import {
   apiBase,
   apiUrl,
@@ -230,7 +230,7 @@ export default function App() {
   const onDownload = useCallback(async () => {
     if (!jobId) return;
     setError(null);
-    setInfo("Preparing download…");
+    setInfo("Preparing downloadâ€¦");
     try {
       const r = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/download`), {
         method: "GET",
@@ -271,7 +271,7 @@ export default function App() {
     const id = params.get("job");
     if (id) {
       setJobId(id);
-      setInfo("Restored job from URL. Polling…");
+      setInfo("Restored job from URL. Pollingâ€¦");
       setError(null);
       startPolling(id);
     }
@@ -361,7 +361,7 @@ export default function App() {
         }
       }, 5000);
     } else {
-      // No Turnstile configured → proceed immediately
+      // No Turnstile configured â†’ proceed immediately
       void refreshJwt();
     }
 
@@ -396,6 +396,8 @@ export default function App() {
 
   // ---- Guest auth: try multiple endpoints & methods (fixes 405) ----
   async function fetchGuestTokenMulti(): Promise<{ token: string; ttl: number } | null> {
+    // TEMP: backend has no guest endpoint; skip to avoid 404 spam
+    return null;
     let ts = "";
     try {
       ts = await getTurnstileToken();
@@ -456,7 +458,7 @@ export default function App() {
       refreshTimer.current = setTimeout(refreshJwt, next * 1000);
     } catch (e: any) {
       const msg = e?.message || e;
-      setAuthMsg(`auth error: ${msg} – retrying in 30s`);
+      setAuthMsg(`auth error: ${msg} â€“ retrying in 30s`);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(refreshJwt, 30000);
     } finally {
@@ -497,10 +499,10 @@ export default function App() {
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
-    if (!authReady || !jwtRef.current) return alert("Still obtaining auth… try again in a moment.");
+    if (!authReady || !jwtRef.current) return alert("Still obtaining authâ€¦ try again in a moment.");
     setUploading(true);
     setError(null);
-    setInfo("Uploading…");
+    setInfo("Uploadingâ€¦");
     setJob(null);
     setJobId(null);
 
@@ -531,7 +533,7 @@ export default function App() {
 
       const ok = j as Extract<UploadResp, { ok: true }>;
       setJobId(ok.job_id);
-      setInfo("Uploaded. Processing…");
+      setInfo("Uploaded. Processingâ€¦");
 
       // Start polling here as a fallback (in case navigation is blocked)
       startPolling(ok.job_id);
@@ -578,7 +580,7 @@ export default function App() {
           }}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Ask anything…  (Ctrl/Cmd + Enter to send)"
+          placeholder="Ask anythingâ€¦  (Ctrl/Cmd + Enter to send)"
           onKeyDown={(e) => {
             // Allow plain Enter for newlines; submit on Ctrl+Enter (Win/Linux) or Cmd+Enter (macOS).
             // @ts-expect-error: nativeEvent may have isComposing
@@ -651,7 +653,7 @@ export default function App() {
             <>
               <div style={{ fontSize: 14 }}>
                 <strong>Status:</strong> {job.status}
-                {typeof job.progress !== "undefined" && job.progress !== null && <> — {String(job.progress)}%</>}
+                {typeof job.progress !== "undefined" && job.progress !== null && <> â€” {String(job.progress)}%</>}
               </div>
               {isDone && (
                 <div style={{ paddingTop: 8 }}>
@@ -681,3 +683,4 @@ export default function App() {
     </div>
   );
 }
+

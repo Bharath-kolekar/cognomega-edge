@@ -102,7 +102,7 @@ async function fetchGuestToken(): Promise<{ token: string; exp?: number } | null
   const first = await tryPostGuest();
   if (first) return first;
 
-  const fallbacks = ["/api/gen-jwt", "/gen-jwt"];
+  const fallbacks: string[] = [];
   for (const p of fallbacks) {
     const got = await tryGetFallback(p);
     if (got) return got;
@@ -179,3 +179,4 @@ async function mount() {
 }
 
 mount();
+

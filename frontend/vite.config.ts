@@ -37,8 +37,8 @@ export default defineConfig({
       "/api":     { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
       "/v1":      { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
       "/auth":    { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
-      "/gen-jwt": { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
       "/billing": { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" }
     }
   }
 });
+
