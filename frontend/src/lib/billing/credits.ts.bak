@@ -1,0 +1,69 @@
+﻿import { apiUrl, authHeaders } from "../api/apiBase";
+
+export type CreditBalance = { ok: boolean; balance?: number | null };
+
+const CANDIDATES = [
+  "/api/credits",
+  "/v1/credits",
+  "/credits",
+  "/api/billing/credits",
+  "/api/credits/balance",
+  "/v1/credits/balance"
+];
+
+function numFrom(data: any): number | null {
+  if (typeof data === "number" && Number.isFinite(data)) return data;
+  if (typeof data === "string") {
+    const n = Number(data);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (data && typeof data === "object") {
+    const keys = ["balance", "credits", "remaining", "available"];
+    for (const k of keys) {
+      const v = (data as any)[k];
+      const n = typeof v === "string" ? Number(v) : v;
+      if (typeof n === "number" && Number.isFinite(n)) return n;
+    }
+    // common nested shapes
+    if (data.data) return numFrom(data.data);
+    if (data.result) return numFrom(data.result);
+  }
+  return null;
+}
+
+async function getMaybe(path: string): Promise<{ status: number; value: number | null; }> {
+  try {
+    const r = await fetch(apiUrl(path), {
+      method: "GET",
+      headers: { ...authHeaders(), Accept: "application/json" },
+      cache: "no-store"
+    });
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    let body: any = null;
+    try { body = ct.includes("application/json") ? await r.json() : await r.text(); } catch {}
+    if (!r.ok) {
+      // Treat 404/405 as "endpoint not present" — don't surface as errors
+      return { status: r.status, value: null };
+    }
+    return { status: r.status, value: numFrom(body) };
+  } catch {
+    // Network/CORS: also just skip
+    return { status: 0, value: null };
+  }
+}
+
+export async function fetchCreditBalance(): Promise<CreditBalance> {
+  for (const p of CANDIDATES) {
+    const { value } = await getMaybe(p);
+    if (value !== null) return { ok: true, balance: value };
+  }
+  // Nothing matched — feature not available; callers should render "—"
+  return { ok: false, balance: null };
+}
+
+// Back-compat (some callers imported fetchCredits)
+export async function fetchCredits(): Promise<number | null> {
+  const r = await fetchCreditBalance();
+  return r.ok ? (r.balance ?? null) : null;
+}
+
