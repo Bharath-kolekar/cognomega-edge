@@ -12,6 +12,7 @@ build/
 
 # local backups / temp
 *.bak
+*.ts.bak
 *.bak_*
 *.tmp
 *.swp
