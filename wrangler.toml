@@ -1,0 +1,46 @@
+﻿name = "cognomega-auth"
+main = "src/index.ts"
+compatibility_date = "2025-09-03"
+
+# Modern Node API compat for Wrangler v4+
+compatibility_flags = ["nodejs_compat"]
+
+# This is a zoned Worker; do not serve on *.workers.dev
+workers_dev = false
+
+# Own the entire api.cognomega.com subdomain with a single wildcard route.
+# This ensures every path (e.g., /api/v1/healthz) hits this Worker without
+# needing to maintain lots of individual routes.
+routes = [
+  { pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }
+]
+
+[vars]
+CREDIT_PER_1K = "0.05"   # example: 0.05 credits per 1,000 tokens (in+out)
+# Allow production + localhost preview
+ALLOWED_ORIGINS = "https://app.cognomega.com,http://localhost:5173,http://localhost:5174"
+JWT_TTL_SEC = "3600"
+ISSUER = "https://api.cognomega.com"
+KID = "k1"
+PREFERRED_PROVIDER = "groq,cfai,openai"
+
+# model choices (adjust to what you have access to)
+GROQ_MODEL   = "llama-3.1-8b-instant"     # example
+CF_AI_MODEL  = "@cf/meta/llama-3.1-8b-instruct"  # example Workers AI model tag
+OPENAI_MODEL = "gpt-4o-mini"              # example
+OPENAI_BASE  = "https://api.openai.com/v1"
+
+# Optional AI binding if you plan to call AI from this worker later
+[ai]
+binding = "AI"
+
+# Workers KV for key storage (public JWKS is stored here under key "jwks")
+[[kv_namespaces]]
+binding = "KEYS"
+id = "7e9d002852ba44849900a2babfcaf816"
+
+[[kv_namespaces]]
+binding = "KV_BILLING"
+id = "5da314a8b48b4db684678ab5ad074563"
+preview_id = "d4065042d02f493fb6176d36609dc133"
+
