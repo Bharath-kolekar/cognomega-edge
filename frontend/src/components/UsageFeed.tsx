@@ -3,9 +3,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { apiUrl } from "../lib/api/apiBase";
 
 type Props = {
-  email: string;       // e.g. "vihaan@cognomega.com"
-  apiBase: string;     // e.g. "https://api.cognomega.com" (optional at runtime; apiUrl() will be used if empty)
-  refreshMs?: number;  // optional, defaults to 15s
+  /** Optional; guests may not have an email. */
+  email?: string | null;
+  /** Optional; if not a non-empty string, we fall back to apiUrl(). */
+  apiBase?: string | unknown;
+  /** Poll interval (ms). Default 15s. */
+  refreshMs?: number;
 };
 
 type UsageEvent = {
@@ -79,20 +82,38 @@ function readToken(): string | null {
   return null;
 }
 
-function buildHeaders(email?: string): Record<string, string> {
-  const h: Record<string, string> = { Accept: "application/json" };
-  const tok = readToken();
-  if (tok) h["Authorization"] = `Bearer ${tok}`;
-  if (email && email.trim()) h["x-user-email"] = email.trim();
-  return h;
+/* --------------------------- URL construction --------------------------- */
+function joinBase(base: Props["apiBase"], path: string): string {
+  const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
+  if (typeof base !== "string" || !base.trim()) {
+    // Fall back to apiUrl() which knows the resolved base
+    return apiUrl(cleanPath);
+  }
+  return `${base.replace(/\/+$/, "")}${cleanPath}`;
 }
 
-/* --------------------------- URL construction --------------------------- */
-function joinBase(base: string | undefined, path: string): string {
-  const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
-  const b = (base || "").trim();
-  if (!b) return apiUrl(cleanPath);
-  return `${b.replace(/\/+$/, "")}${cleanPath}`;
+/* --------------------------- Response normalization --------------------------- */
+function normalizeUsagePayload(data: any): UsageEvent[] {
+  // Accept a few common shapes:
+  // 1) { events: UsageEvent[] }
+  // 2) { items: [...]}  (map best-effort)
+  // 3) UsageEvent[]
+  if (Array.isArray(data)) return data as UsageEvent[];
+  if (Array.isArray(data?.events)) return data.events as UsageEvent[];
+  if (Array.isArray(data?.items)) {
+    return (data.items as any[]).map((it) => ({
+      created_at:
+        it.created_at ??
+        it.timestamp ??
+        it.ts ??
+        (typeof it.time === "number" ? new Date(it.time).toISOString() : new Date().toISOString()),
+      route: it.route ?? it.path ?? it.endpoint ?? "",
+      tokens_in: it.tokens_in ?? it.tin ?? it.in ?? undefined,
+      tokens_out: it.tokens_out ?? it.tout ?? it.out ?? undefined,
+      cost_credits: it.cost_credits ?? it.credits ?? it.cost ?? undefined,
+    }));
+  }
+  return [];
 }
 
 /* --------------------------------- UI ---------------------------------- */
@@ -104,17 +125,32 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
   const abortRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<number | null>(null);
 
+  const debug = (() => {
+    try {
+      return (localStorage.getItem("debug_usage") || "").trim() === "1";
+    } catch {
+      return false;
+    }
+  })();
+
   const load = useCallback(async () => {
     try {
       setErr(null);
       // cancel any in-flight request
       if (abortRef.current) {
-        try { abortRef.current.abort(); } catch {}
+        try {
+          abortRef.current.abort();
+        } catch {}
       }
       const ac = new AbortController();
       abortRef.current = ac;
 
-      // Try a few likely endpoints; first JSON 2xx wins.
+      // Build headers WITHOUT custom x-user-email to avoid CORS preflight on GET
+      const headers: Record<string, string> = { Accept: "application/json" };
+      const tok = readToken();
+      if (tok) headers["Authorization"] = `Bearer ${tok}`;
+
+      // Try canonical first, then a few alternates.
       const candidates = [
         joinBase(apiBase, "/api/billing/usage"),
         joinBase(apiBase, "/billing/usage"),
@@ -122,14 +158,14 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
         joinBase(apiBase, "/usage"),
       ];
 
-      let response: Response | null = null;
+      let chosen = "";
       let data: any = null;
 
       for (const url of candidates) {
         try {
           const r = await fetch(url, {
             method: "GET",
-            headers: buildHeaders(email),
+            headers,
             cache: "no-store",
             signal: ac.signal,
           });
@@ -138,25 +174,28 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
           const isJson = ct.includes("application/json");
           const parsed = isJson ? await r.json() : await r.text();
 
+          if (debug) console.info("[UsageFeed] probe", url, r.status, ct);
+
           if (r.ok && isJson) {
-            response = r;
+            chosen = url;
             data = parsed;
             break;
           }
-          // If not ok, keep trying next candidate
-        } catch {
+        } catch (e) {
+          if (debug) console.warn("[UsageFeed] probe error", url, e);
           // continue
         }
       }
 
-      if (!response) {
+      if (!chosen) {
         throw new Error("usage endpoint not found");
       }
 
-      const list: UsageEvent[] = Array.isArray(data) ? data : (data?.events ?? []);
+      const list: UsageEvent[] = normalizeUsagePayload(data);
+      if (debug) console.info("[UsageFeed] chosen", chosen, "events", list.length);
+
       setItems(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      // Only show error if it wasn't an intentional abort
       if (!(e?.name === "AbortError")) {
         setErr(e?.message || "Error loading usage");
       }
@@ -164,18 +203,19 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
       setLoad(false);
       abortRef.current = null;
     }
-  }, [apiBase, email]);
+  }, [apiBase, debug]);
 
   // initial + polling refresh
   useEffect(() => {
     setLoad(true);
     void load();
-    // set up interval
     intervalRef.current = window.setInterval(load, refreshMs) as unknown as number;
     return () => {
       if (intervalRef.current) window.clearInterval(intervalRef.current);
       if (abortRef.current) {
-        try { abortRef.current.abort(); } catch {}
+        try {
+          abortRef.current.abort();
+        } catch {}
       }
     };
   }, [load, refreshMs]);
@@ -194,7 +234,6 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
   const fmtWhen = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
-    // Example: 06 Sept, 09:51 (locale aware)
     return d.toLocaleString(undefined, {
       day: "2-digit",
       month: "short",
@@ -205,7 +244,6 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
 
   const whatLabel = (x: UsageEvent) => {
     const route = x.route || "";
-    // Broaden matching for different deployments/paths
     const isAsk =
       route.includes("/api/si/ask") ||
       route.includes("/v1/si/ask") ||
@@ -255,9 +293,7 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
                 const tIn = x.tokens_in ?? 0;
                 const tOut = x.tokens_out ?? 0;
                 const cr =
-                  typeof x.cost_credits === "number"
-                    ? x.cost_credits.toFixed(3)
-                    : "0.000";
+                  typeof x.cost_credits === "number" ? x.cost_credits.toFixed(3) : "0.000";
                 return (
                   <tr key={`${x.created_at}-${i}`} style={{ background: bg }}>
                     <td style={td}>{fmtWhen(x.created_at)}</td>
