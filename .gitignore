@@ -1,35 +1,21 @@
-﻿# Node/TS
+﻿# node & tooling
 node_modules/
 dist/
 build/
 .esbuild/
-.cache/
-coverage/
-*.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-error.log*
-
-# Cloudflare Workers/Pages
-.wrangler/
-.dev.vars
-wrangler-state/
-
-# Env & secrets
-.env
-.env.*
-*.pem
-*.pfx
-*.crt
-*.key
-api/config/*secret*
-api/config/*token*
-api/config/*key*
-
-# OS / misc
 .DS_Store
-Thumbs.db
-*.zip
-*.tar.gz
 
-frontend/node_modules._old_*/
+# CF/Wrangler outputs & logs
+.wrangler/
+.wranglerstate
+*.log
+
+# local backups / temp
+*.bak
+*.bak_*
+*.tmp
+*.swp
+
+# env files (if you add any local-only envs)
+*.env
+.env.*
