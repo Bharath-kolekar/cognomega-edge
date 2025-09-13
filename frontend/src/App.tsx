@@ -25,14 +25,23 @@ const TS_SITE =
     (import.meta as any)?.env?.VITE_TURNSTILE_SITE_KEY) ||
   "";
 
-// ---- types for polling UI (mirrors tool page) ----
+// ---- types for polling UI (kept; used elsewhere) ----
 type Job = {
   id: string;
   status: "queued" | "working" | "done" | "error" | string;
   progress?: string | number | null;
 };
+
+// Response shape for /api/upload/direct
 type UploadResp =
-  | { ok: true; key: string; size: number; job_id: string; status: string }
+  | {
+      ok: true;
+      key: string;
+      size: number;
+      etag?: string | null;
+      version?: string | null;
+      content_type?: string;
+    }
   | { error: string; [k: string]: any };
 
 const POLL_INTERVAL_MS = 1000;
@@ -49,7 +58,12 @@ function readPrompts(): { ts: number; text: string }[] {
     const arr = raw ? (JSON.parse(raw) as { ts: number; text: string }[]) : [];
     const cutoff = Date.now() - MAX_AGE_MS;
     return arr
-      .filter((p) => typeof p?.ts === "number" && typeof p?.text === "string" && p.ts >= cutoff)
+      .filter(
+        (p) =>
+          typeof p?.ts === "number" &&
+          typeof p?.text === "string" &&
+          p.ts >= cutoff
+      )
       .slice(-MAX_PROMPTS);
   } catch {
     return [];
@@ -84,7 +98,7 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 function persistGuestToken(token: string, ttlSecOrExp: number) {
   try {
     const exp =
-      ttlSecOrExp > 2_000_000_000 /* looks like epoch? */ ? ttlSecOrExp : nowSec() + ttlSecOrExp;
+      ttlSecOrExp > 2_000_000_000 ? ttlSecOrExp : nowSec() + ttlSecOrExp;
     localStorage.setItem("guest_token", token);
     localStorage.setItem("jwt", token);
     localStorage.setItem("cog_auth_jwt", JSON.stringify({ token, exp }));
@@ -112,7 +126,6 @@ function extractToken(result: any): { token: string; ttl: number } | null {
         : result.token || result.jwt || result.guest_token || result.access_token;
     if (!tokenRaw || typeof tokenRaw !== "string") return null;
 
-    // Prefer absolute exp; otherwise expires_in; otherwise default 600s
     let ttl = 600;
     const now = nowSec();
     const expAbs = Number(result.exp || result.expires_at);
@@ -135,7 +148,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [resolvedBase, setResolvedBase] = useState<string>("");
 
-  // Poll/download UI state (copied from tool page)
+  // Poll/download UI state (kept for other features)
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -287,18 +300,15 @@ export default function App() {
   // ---------- health probe & boot ----------
   useEffect(() => {
     (async () => {
-      // Ensure API base is resolved before health checks
       try {
         await ensureApiBase();
         setResolvedBase(currentApiBase());
       } catch {}
 
-      // Wait for auth bootstrap if main.tsx exposed it
       try {
         await (window as any).__cogAuthReady;
       } catch {}
 
-      // Health probe: try multiple endpoints, accept JSON only
       const paths = ["/ready", "/api/ready", "/health", "/api/health", "/healthz", "/api/healthz"];
       let reported = false;
       for (const p of paths) {
@@ -348,19 +358,17 @@ export default function App() {
           }
           clearInterval(iv);
           iv = null;
-          void refreshJwt(); // proceed once widget rendered
+          void refreshJwt();
         }
       }, 200);
 
-      // Fallback: if Turnstile still not available after 5s, proceed without it
       fb = setTimeout(() => {
         if (!widRef.current) {
           setAuthMsg("turnstile unavailable; proceeding without it");
-          void refreshJwt(); // server allows guest without Turnstile
+          void refreshJwt();
         }
       }, 5000);
     } else {
-      // No Turnstile configured -> proceed immediately
       void refreshJwt();
     }
 
@@ -488,52 +496,50 @@ export default function App() {
     }
   };
 
-  // ---------- new upload that mirrors tool page & redirects ----------
+  // ---------- UPDATED: direct R2 upload via /api/upload/direct ----------
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
-    if (!authReady || !jwtRef.current) return alert("Still obtaining auth... try again in a moment.");
+    if (!authReady || !jwtRef.current)
+      return alert("Still obtaining auth... try again in a moment.");
+
     setUploading(true);
     setError(null);
-    setInfo("Uploading...");
+    setInfo("Uploading to R2...");
     setJob(null);
     setJobId(null);
 
     try {
-      const fd = new FormData();
-      fd.append("file", f);
+      const email = readUserEmail() || "";
+      const url = apiUrl(`/api/upload/direct?filename=${encodeURIComponent(f.name)}`);
 
-      const r = await fetch(apiUrl("/v1/files/upload"), {
+      const r = await fetch(url, {
         method: "POST",
+        // NOTE: send RAW file body (no FormData). Browser will set Content-Length.
         headers: {
-          // DO NOT set Content-Type for multipart
           Authorization: `Bearer ${jwtRef.current}`,
+          ...(email ? { "X-User-Email": email } : {}),
+          "Content-Type": (f.type && f.type.trim()) || "application/octet-stream",
         },
-        body: fd,
+        body: f,
       });
 
       const ct = r.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) {
-        const text = await r.text();
-        throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
-      }
+      const asJson = ct.includes("application/json");
+      const data: UploadResp = asJson ? await r.json() : ({ error: await r.text() } as any);
 
-      const j: UploadResp = await r.json();
-      if (!r.ok || (j as any).error) {
-        const msg = (j as any).error ? String((j as any).error) : `${r.status} ${r.statusText}`;
+      if (!r.ok || (data as any).error) {
+        const msg =
+          (data as any).error || `${r.status} ${r.statusText}` || "upload failed";
         throw new Error(msg);
       }
 
-      const ok = j as Extract<UploadResp, { ok: true }>;
-      setJobId(ok.job_id);
-      setInfo("Uploaded. Processing...");
-
-      // Start polling here as a fallback (in case navigation is blocked)
-      startPolling(ok.job_id);
-
-      // Navigate users to the tool page to continue UX there
-      const q = new URLSearchParams({ job: ok.job_id }).toString();
-      window.location.assign(`/tools/sketch-to-app?${q}`);
+      const ok = data as Extract<UploadResp, { ok: true }>;
+      setInfo(
+        `Uploaded ✓  key=${ok.key}  size=${ok.size}  ` +
+          (ok.content_type ? `ct=${ok.content_type}` : "")
+      );
+      setResp(JSON.stringify(ok, null, 2));
     } catch (e: any) {
       const msg = (e?.message || e)?.toString?.() || "";
       if (msg.toLowerCase().includes("failed to fetch")) {
@@ -617,7 +623,7 @@ export default function App() {
       </pre>
 
       {/* Always pass a real string for apiBase. "" in dev is OK. */}
-      <UsageFeed email={(readUserEmail() || "")} apiBase={resolvedBase} refreshMs={3000} />
+      <UsageFeed email={readUserEmail() || ""} apiBase={resolvedBase} refreshMs={3000} />
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -647,7 +653,8 @@ export default function App() {
             <>
               <div style={{ fontSize: 14 }}>
                 <strong>Status:</strong> {job.status}
-                {typeof job.progress !== "undefined" && job.progress !== null && <> - {String(job.progress)}%</>}
+                {typeof job.progress !== "undefined" &&
+                  job.progress !== null && <> - {String(job.progress)}%</>}
               </div>
               {isDone && (
                 <div style={{ paddingTop: 8 }}>
@@ -668,7 +675,11 @@ export default function App() {
             </>
           )}
           {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
-          {error && <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>Error: {error}</div>}
+          {error && (
+            <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>
+              Error: {error}
+            </div>
+          )}
         </div>
       )}
 

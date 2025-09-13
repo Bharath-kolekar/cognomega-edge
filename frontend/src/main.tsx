@@ -8,7 +8,7 @@ import { apiUrl, ensureApiBase } from "./lib/api/apiBase";
 /** ------------------------------------------------------------------------
  *  Minimal guest-auth bootstrap (waits before first render)
  *  - Persists under: cog_auth_jwt (JSON), jwt (string), guest_token (string)
- *  - Prefers POST /auth/guest, falls back to /api/gen-jwt, /gen-jwt
+ *  - Prefers POST /auth/guest
  *  - Broadcasts a synthetic storage event so same-tab listeners refresh
  *  - Uses apiUrl() for endpoints (after ensureApiBase() discovery)
  *  ---------------------------------------------------------------------- */
@@ -66,6 +66,7 @@ async function tryPostGuest(): Promise<{ token: string; exp?: number } | null> {
     const r = await fetch(apiUrl("/auth/guest"), {
       method: "POST",
       headers: { Accept: "application/json" },
+      body: "{}", // harmless body helps some proxies treat this as JSON
     });
     if (!r.ok) return null;
     const ct = r.headers.get("content-type") || "";
@@ -179,4 +180,3 @@ async function mount() {
 }
 
 mount();
-
