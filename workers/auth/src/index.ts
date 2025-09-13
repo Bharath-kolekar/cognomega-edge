@@ -1,10 +1,10 @@
 // cf-auth/src/index.ts
-// Cognomega Auth/JWKS/Usage/Jobs/AI Worker (RS256; KV-backed JWKS, Credits, Usage; strict CORS)
+// Cognomega Auth/JWKS/Usage/Jobs/AI/Uploads Worker (RS256; KV-backed JWKS, Credits, Usage; strict CORS)
 //
 // Endpoints (highlights):
 //   POST /auth/guest | /api/auth/guest | /api/v1/auth/guest   -> { token, exp }
 //   GET  /.well-known/jwks.json                               -> { keys: [...] } (public)
-//   GET  /api/credits | /credits                              -> { email, balance_credits, updated_at, credits, updated }
+//   GET  /api/credits | /credits | /api/v1/credits            -> { email, balance_credits, updated_at, credits, updated }
 //   POST /api/credits/adjust                                  -> Admin adjust/set credits
 //
 //   POST /api/billing/usage | GET /api/billing/usage          -> usage append/list (aliases supported)
@@ -12,6 +12,8 @@
 //   POST /api/jobs/run                                         -> Fire-and-wait SI job
 //
 //   POST /api/si/ask                                          -> provider-ordered chat (groq → cfai → openai) with usage & credit headers
+//
+//   POST /api/upload/direct                                   -> raw-body direct upload to R2 (env.R2_UPLOADS)
 //
 //   GET  /ready | /healthz | /api/ready | /api/healthz | /api/v1/healthz
 //
@@ -40,6 +42,9 @@ export interface Env {
   OPENAI_BASE?: string;        // defaults to https://api.openai.com/v1
   CREDIT_PER_1K?: string;      // credits charged per 1k tokens (input+output)
 
+  // Uploads
+  MAX_UPLOAD_BYTES?: string;   // optional, default 10 * 1024 * 1024
+
   // Secrets
   PRIVATE_KEY_PEM?: string;
   GROQ_API_KEY?: string;
@@ -51,6 +56,7 @@ export interface Env {
   AI: any;                     // Workers AI binding
   KEYS: KVNamespace;           // public JWKS
   KV_BILLING: KVNamespace;     // credits + usage + jobs
+  R2_UPLOADS: R2Bucket;        // R2 bucket for uploads
 }
 
 type Json = Record<string, unknown> | Array<unknown>;
@@ -246,7 +252,7 @@ async function adjustBalance(env: Env, email: string, delta: number): Promise<Ba
   return setBalance(env, email, cur.balance_credits + delta);
 }
 
-// GET /api/credits | /credits
+// GET /api/credits | /credits | /api/v1/credits
 function handleCreditsGet(req: Request, env: Env): Promise<Response> | Response {
   const email = getCallerEmail(req);
   if (!email) return json({ error: "missing_email" }, req, env, 400);
@@ -844,6 +850,69 @@ async function handleAdminCleanup(req: Request, env: Env): Promise<Response> {
   return json(res, req, env, 200);
 }
 
+// ---------- Uploads (R2) ----------
+
+function sanitizeFilename(name: string): string {
+  const base = (name || "").split(/[\\\/]/).pop() || "";
+  const cleaned = base.replace(/[^\w.\-]+/g, "_");
+  const noDots = cleaned.replace(/^\.+/, "");
+  const limited = noDots.slice(0, 128);
+  return limited || "blob";
+}
+
+/**
+ * POST /api/upload/direct
+ * - Raw body (not multipart)
+ * - Requires Content-Length; enforces MAX_UPLOAD_BYTES (default 10MB)
+ * - Requires caller email (X-User-Email or JWT/cookie)
+ * - Writes to env.R2_UPLOADS with content-type and metadata
+ */
+async function handleUploadDirect(req: Request, env: Env): Promise<Response> {
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
+
+  const email = getCallerEmail(req);
+  if (!email) return json({ error: "missing_email" }, req, env, 400);
+
+  const bucket = (env as any).R2_UPLOADS as R2Bucket | undefined;
+  if (!bucket || typeof (bucket as any).put !== "function") {
+    return json({ error: "r2_not_bound" }, req, env, 500);
+  }
+
+  // Enforce size from Content-Length
+  const clRaw = req.headers.get("content-length") || "";
+  const size = Number(clRaw);
+  const maxBytes = Math.max(1, Number(env.MAX_UPLOAD_BYTES || "10485760")); // 10MB default
+  if (!Number.isFinite(size) || size <= 0) return json({ error: "length_required" }, req, env, 411);
+  if (size > maxBytes) return json({ error: "payload_too_large", max_bytes: maxBytes }, req, env, 413);
+
+  const url = new URL(req.url);
+  const filenameQ = (url.searchParams.get("filename") || "").trim();
+  const filename = sanitizeFilename(filenameQ) || "blob";
+  const ct = (req.headers.get("content-type") || "application/octet-stream").split(";")[0].trim();
+  if (!req.body) return json({ error: "empty_body" }, req, env, 400);
+
+  const d = new Date();
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const safeEmail = (email || "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 64);
+  const key = `uploads/${yyyy}/${mm}/${dd}/${safeEmail}/${crypto.randomUUID()}-${filename}`;
+
+  const putRes = await bucket.put(key, req.body as any, {
+    httpMetadata: { contentType: ct },
+    customMetadata: { uploader: email, route: "/api/upload/direct", original_filename: filename }
+  });
+
+  return json({
+    ok: true,
+    key,
+    size,
+    etag: (putRes as any)?.etag || null,
+    version: (putRes as any)?.version || null,
+    content_type: ct
+  }, req, env, 200);
+}
+
 // ---------- Worker
 
 export default {
@@ -870,7 +939,7 @@ export default {
     }
 
     // Credits
-    if (p === "/api/credits" || p === "/credits") {
+    if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
       return handleCreditsGet(req, env);
     }
     if (p === "/api/credits/adjust") {
@@ -955,6 +1024,12 @@ export default {
     // Admin cleanup
     if (p === "/api/admin/cleanup") {
       return handleAdminCleanup(req, env);
+    }
+
+    // Direct upload to R2
+    if (p === "/api/upload/direct") {
+      if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
+      return handleUploadDirect(req, env);
     }
 
     // SI ask (provider-ordered chat + usage + credit deduct + headers)

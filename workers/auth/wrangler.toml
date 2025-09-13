@@ -1,4 +1,4 @@
-﻿name = "cognomega-auth"
+name = "cognomega-auth"
 main = "src/index.ts"
 compatibility_date = "2025-09-03"
 
@@ -44,3 +44,7 @@ binding = "KV_BILLING"
 id = "5da314a8b48b4db684678ab5ad074563"
 preview_id = "d4065042d02f493fb6176d36609dc133"
 
+[[r2_buckets]]
+binding = "R2_UPLOADS"
+bucket_name = "cognomega-uploads"
+preview_bucket_name = "cognomega-uploads"
