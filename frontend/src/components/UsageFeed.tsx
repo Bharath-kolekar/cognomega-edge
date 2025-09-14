@@ -7,7 +7,7 @@ type Props = {
   email?: string | null;
   /** Optional; if not a non-empty string, we fall back to apiUrl(). */
   apiBase?: string | unknown;
-  /** Poll interval (ms). Default 15s. */
+  /** Poll interval (ms). Default 30s. */
   refreshMs?: number;
 };
 
@@ -82,6 +82,16 @@ function readToken(): string | null {
   return null;
 }
 
+/** Read user email from prop or localStorage as a fallback. */
+function readEmailFromAny(propEmail?: string | null): string | null {
+  if (propEmail && propEmail.trim()) return propEmail.trim();
+  try {
+    const e = localStorage.getItem("user_email");
+    if (e && e.trim()) return e.trim();
+  } catch {}
+  return null;
+}
+
 /* --------------------------- URL construction --------------------------- */
 function joinBase(base: Props["apiBase"], path: string): string {
   const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
@@ -117,13 +127,31 @@ function normalizeUsagePayload(data: any): UsageEvent[] {
 }
 
 /* --------------------------------- UI ---------------------------------- */
-export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) {
+export default function UsageFeed({
+  email,
+  apiBase,
+  refreshMs = 30000, // 30s default
+}: Props) {
   const [items, setItems] = useState<UsageEvent[]>([]);
   const [loading, setLoad] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [lpVer, setLpVer] = useState(0); // bump when localStorage changes
   const abortRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<number | null>(null);
+
+  // Only allow usage feed on production app domain or allowed localhost ports.
+  const originOk = useMemo(() => {
+    try {
+      const o = window.location.origin.toLowerCase();
+      return (
+        o === "https://app.cognomega.com" ||
+        o === "http://localhost:5173" ||
+        o === "http://localhost:5174"
+      );
+    } catch {
+      return true;
+    }
+  }, []);
 
   const debug = (() => {
     try {
@@ -136,6 +164,15 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
   const load = useCallback(async () => {
     try {
       setErr(null);
+
+      // If we're on a preview domain, quietly skip (CORS would block).
+      if (!originOk) {
+        if (debug) console.info("[UsageFeed] skipping on preview origin (CORS)");
+        setItems([]);
+        setLoad(false);
+        return;
+      }
+
       // cancel any in-flight request
       if (abortRef.current) {
         try {
@@ -145,14 +182,17 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
       const ac = new AbortController();
       abortRef.current = ac;
 
-      // Build headers WITHOUT custom x-user-email to avoid CORS preflight on GET
+      // Build headers; include Authorization + X-User-Email if available
       const headers: Record<string, string> = { Accept: "application/json" };
       const tok = readToken();
       if (tok) headers["Authorization"] = `Bearer ${tok}`;
+      const who = readEmailFromAny(email || undefined);
+      if (who) headers["X-User-Email"] = who;
 
-      // Try canonical first, then a few alternates.
+      // Try canonical first, then a few alternates (including /api/v1).
       const candidates = [
         joinBase(apiBase, "/api/billing/usage"),
+        joinBase(apiBase, "/api/v1/billing/usage"),
         joinBase(apiBase, "/billing/usage"),
         joinBase(apiBase, "/api/usage"),
         joinBase(apiBase, "/usage"),
@@ -196,14 +236,19 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
 
       setItems(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      if (!(e?.name === "AbortError")) {
+      // On preview domains CORS shows up as "Failed to fetch" — we already skip above,
+      // but be extra defensive and silence network noise.
+      const msg = (e?.message || "").toString().toLowerCase();
+      if (!originOk && msg.includes("failed to fetch")) {
+        setErr(null);
+      } else if (!(e?.name === "AbortError")) {
         setErr(e?.message || "Error loading usage");
       }
     } finally {
       setLoad(false);
       abortRef.current = null;
     }
-  }, [apiBase, debug]);
+  }, [apiBase, originOk, debug, email]);
 
   // initial + polling refresh
   useEffect(() => {
@@ -253,7 +298,11 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
       const prompt = matchPrompt(new Date(x.created_at).getTime(), localPrompts);
       return prompt ? `Q: ${clip(prompt, 120)}` : "Q: (prompt not captured locally)";
     }
-    if (route.includes("/v1/files/upload") || route.includes("/files/upload")) {
+    if (
+      route.includes("/v1/files/upload") ||
+      route.includes("/files/upload") ||
+      route.includes("/api/upload/direct")
+    ) {
       return "Upload processed";
     }
     return "Usage";
@@ -265,11 +314,18 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
     <div style={{ marginTop: 12 }}>
       <div style={{ fontWeight: 600, marginBottom: 6 }}>Recent usage</div>
 
-      {loading && <div>Loading…</div>}
-      {err && <div style={{ color: "#b91c1c" }}>Error loading usage</div>}
-      {!loading && !err && rows.length === 0 && <div>No recent usage</div>}
+      {!originOk && (
+        <div style={{ color: "#6b7280", fontSize: 12 }}>
+          Usage feed is unavailable on preview domains (CORS). Open{" "}
+          <code>https://app.cognomega.com</code> or run locally to view.
+        </div>
+      )}
 
-      {!loading && !err && rows.length > 0 && (
+      {originOk && loading && <div>Loading…</div>}
+      {originOk && err && <div style={{ color: "#b91c1c" }}>Error loading usage</div>}
+      {originOk && !loading && !err && rows.length === 0 && <div>No recent usage</div>}
+
+      {originOk && !loading && !err && rows.length > 0 && (
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
           <table
             style={{
@@ -321,7 +377,7 @@ export default function UsageFeed({ email, apiBase, refreshMs = 15000 }: Props) 
               borderTop: "1px solid #e5e7eb",
             }}
           >
-            Auto-refreshing every {Math.round((refreshMs ?? 15000) / 1000)}s
+            Auto-refreshing every {Math.round((refreshMs ?? 30000) / 1000)}s
           </div>
         </div>
       )}

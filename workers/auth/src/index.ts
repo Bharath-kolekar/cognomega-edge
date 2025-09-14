@@ -98,11 +98,17 @@ function nowSeconds() { return Math.floor(Date.now() / 1000); }
 const ALLOW_HEADERS  = "Authorization, Content-Type, X-User-Email, x-user-email, X-Admin-Key, X-Admin-Token";
 const EXPOSE_HEADERS = "X-Credits-Used, X-Credits-Balance, X-Tokens-In, X-Tokens-Out, X-Provider, X-Model";
 
+// ---- tolerant CORS: echo Origin if ALLOWED_ORIGINS is unset
 function corsHeaders(req: Request, env: Env): Headers {
   const origin = req.headers.get("Origin") || "";
   const allowed = (env.ALLOWED_ORIGINS || "")
-    .split(",").map(s => s.trim()).filter(Boolean);
-  const allowOrigin = allowed.includes(origin) ? origin : (allowed[0] ?? "");
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const allowOrigin =
+    allowed.length === 0 ? origin :
+    allowed.includes(origin) ? origin : "";
 
   const h = new Headers();
   if (allowOrigin) h.set("Access-Control-Allow-Origin", allowOrigin);
@@ -528,9 +534,10 @@ async function processSiJob(env: Env, jobId: string): Promise<void> {
   const input = (job0.params?.["input"] ?? "").toString();
 
   try {
-    // credits pre-check (same behavior as /api/si/ask)
+    // credits pre-check (same behavior as /api/si/ask) — bypass for guests
+    const isGuest = (email || "").startsWith("guest:");
     const balRow = await getBalance(env, email);
-    if ((balRow.balance_credits ?? 0) <= 0) {
+    if (!isGuest && (balRow.balance_credits ?? 0) <= 0) {
       job0.status = "failed";
       job0.result = { error: "insufficient_credits", balance_credits: balRow.balance_credits };
       job0.updated_at = new Date().toISOString();
@@ -551,9 +558,9 @@ async function processSiJob(env: Env, jobId: string): Promise<void> {
       provider: out.provider, model: out.model, skill, job_id: job0.id
     }).catch(() => {});
 
-    // deduct credits
+    // deduct credits (skip for guests during free mode)
     let balanceAfter: number | undefined;
-    if (creditsUsed > 0) {
+    if (!isGuest && creditsUsed > 0) {
       try {
         const row = await adjustBalance(env, email, -creditsUsed);
         balanceAfter = row.balance_credits;
@@ -917,180 +924,196 @@ async function handleUploadDirect(req: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(req.url);
-    const p = (url.pathname.replace(/\/+$/, "") || "/").toLowerCase();
+    try {
+      const url = new URL(req.url);
+      const p = (url.pathname.replace(/\/+$/, "") || "/").toLowerCase();
 
-    // CORS preflight
-    if (req.method === "OPTIONS") return noContent(req, env);
+      // CORS preflight
+      if (req.method === "OPTIONS") return noContent(req, env);
 
-    // Health
-    if (p === "/ready" || p === "/healthz" || p === "/api/ready" || p === "/api/healthz" || p === "/api/v1/healthz") {
-      return handleReady(req, env);
-    }
+      // Health
+      if (p === "/ready" || p === "/healthz" || p === "/api/ready" || p === "/api/healthz" || p === "/api/v1/healthz") {
+        return handleReady(req, env);
+      }
 
-    // Auth (plain, /api/, /api/v1/)
-    if (p === "/auth/guest" || p === "/api/auth/guest" || p === "/api/v1/auth/guest") {
-      return handleGuest(req, env);
-    }
+      // Auth (plain, /api/, /api/v1/)
+      if (p === "/auth/guest" || p === "/api/auth/guest" || p === "/api/v1/auth/guest") {
+        return handleGuest(req, env);
+      }
 
-    // Public JWKS
-    if (p === "/.well-known/jwks.json") {
-      return handleJwks(req, env);
-    }
+      // Public JWKS
+      if (p === "/.well-known/jwks.json") {
+        return handleJwks(req, env);
+      }
 
-    // Credits
-    if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
-      return handleCreditsGet(req, env);
-    }
-    if (p === "/api/credits/adjust") {
-      return handleCreditsAdjust(req, env);
-    }
+      // Credits
+      if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
+        return handleCreditsGet(req, env);
+      }
+      if (p === "/api/credits/adjust") {
+        return handleCreditsAdjust(req, env);
+      }
 
-    // Usage
-    if (isUsagePath(p)) {
-      if (req.method === "GET")  return handleUsageGet(req, env);
-      if (req.method === "POST") return handleUsagePost(req, env);
-      return json({ error: "method_not_allowed" }, req, env, 405);
-    }
+      // Usage (guarded to never leak raw 500s)
+      if (isUsagePath(p)) {
+        if (req.method === "OPTIONS") return noContent(req, env);
+        try {
+          if (req.method === "GET")  return await handleUsageGet(req, env);
+          if (req.method === "POST") return await handleUsagePost(req, env);
+          return json({ error: "method_not_allowed" }, req, env, 405);
+        } catch (e: any) {
+          return json({ events: [], error: "usage_failed", message: String(e?.message ?? e) }, req, env, 200);
+        }
+      }
 
-    // Jobs
-    if (isJobsCollection(p)) {
-      if (req.method === "GET")  return handleJobList(req, env);
+      // Jobs
+      if (isJobsCollection(p)) {
+        if (req.method === "GET")  return handleJobList(req, env);
 
-      if (req.method === "POST") {
-        const email = getCallerEmail(req);
-        if (!email) return json({ error: "missing_email" }, req, env, 400);
+        if (req.method === "POST") {
+          const email = getCallerEmail(req);
+          if (!email) return json({ error: "missing_email" }, req, env, 400);
 
-        let body: any = {};
-        try { body = await req.json(); } catch {}
-        const type = String(body?.type || "si");
-        const params = (body?.params && typeof body.params === "object") ? body.params : undefined;
+          let body: any = {};
+          try { body = await req.json(); } catch {}
+          const type = String(body?.type || "si");
+          const params = (body?.params && typeof body.params === "object") ? body.params : undefined;
 
-        // create the job row + index
-        const job = await createJob(env, email, type, params);
+          // create the job row + index
+          const job = await createJob(env, email, type, params);
 
-        // kick off background processing for SI jobs
-        if (type === "si") {
-          // @ts-ignore Cloudflare provides ExecutionContext in fetch
-          ctx.waitUntil(processSiJob(env, job.id));
+          // kick off background processing for SI jobs
+          if (type === "si") {
+            // @ts-ignore Cloudflare provides ExecutionContext in fetch
+            ctx.waitUntil(processSiJob(env, job.id));
+          }
+
+          return json({ job }, req, env, 200);
         }
 
-        return json({ job }, req, env, 200);
+        return json({ error: "method_not_allowed" }, req, env, 405);
       }
 
-      return json({ error: "method_not_allowed" }, req, env, 405);
-    }
-
-    // Fire-and-wait run
-    if (p === "/api/jobs/run") {
-      return handleJobRun(req, env);
-    }
-
-    const jobId = isJobItem(p);
-    if (jobId) {
-      if (req.method === "GET")   return handleJobGet(req, env, jobId);
-      if (req.method === "PATCH") return handleJobPatch(req, env, jobId);
-      return json({ error: "method_not_allowed" }, req, env, 405);
-    }
-
-    // Workers AI binding check
-    if (p === "/api/ai/binding") {
-      const ok = !!(env as any).AI && typeof (env as any).AI.run === "function";
-      return json({ ai_bound: ok }, req, env, ok ? 200 : 500);
-    }
-
-    // Workers AI test
-    if (p === "/api/ai/test") {
-      if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
-      let body: any = {}; try { body = await req.json(); } catch {}
-      const prompt = (body?.prompt ?? "Say 'pong'").toString();
-      const model = pickCfModel(env);
-      try {
-        const result = await (env as any).AI.run(model, { messages: [{ role: "user", content: prompt }], max_tokens: 64 });
-        const text = normalizeWorkersAiText(result);
-        return json({ ok: true, model, output: text }, req, env, 200);
-      } catch (e: any) {
-        return json({ ok: false, error: "ai_run_failed", detail: String(e?.message || e) }, req, env, 500);
-      }
-    }
-
-    // Admin ping — quick secret check
-    if (p === "/api/admin/ping") {
-      const k = req.headers.get("X-Admin-Key") || req.headers.get("X-Admin-Token") || "";
-      const ok = !!env.ADMIN_API_KEY && k === env.ADMIN_API_KEY;
-      return json({ ok }, req, env, ok ? 200 : 401);
-    }
-
-    // Admin cleanup
-    if (p === "/api/admin/cleanup") {
-      return handleAdminCleanup(req, env);
-    }
-
-    // Direct upload to R2
-    if (p === "/api/upload/direct") {
-      if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
-      return handleUploadDirect(req, env);
-    }
-
-    // SI ask (provider-ordered chat + usage + credit deduct + headers)
-    if (p === "/api/si/ask" || p === "/si/ask") {
-      if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
-
-      const email = getCallerEmail(req) || "anonymous";
-      let body: any = {}; try { body = await req.json(); } catch {}
-      const skill = (body?.skill ?? "general").toString();
-      const input = (body?.input ?? "").toString();
-
-      const messages: ChatMessage[] = [
-        { role: "system", content: `You are a helpful assistant. Skill="${skill}". Keep replies concise.` },
-        { role: "user",   content: input || "Say hello." }
-      ];
-
-      // ---- credits pre-check: block if empty ----
-      const balRow = await getBalance(env, email);
-      if ((balRow.balance_credits ?? 0) <= 0) {
-        return json(
-          { error: "insufficient_credits", balance_credits: balRow.balance_credits },
-          req,
-          env,
-          402, // Payment Required
-        );
+      // Fire-and-wait run
+      if (p === "/api/jobs/run") {
+        return handleJobRun(req, env);
       }
 
-      try {
-        const out = await runPreferred(env, messages);
-        const creditsUsed = round3(creditsFor(Number(out.tokens_in || 0), Number(out.tokens_out || 0), env));
+      const jobId = isJobItem(p);
+      if (jobId) {
+        if (req.method === "GET")   return handleJobGet(req, env, jobId);
+        if (req.method === "PATCH") return handleJobPatch(req, env, jobId);
+        return json({ error: "method_not_allowed" }, req, env, 405);
+      }
 
-        // log usage (best-effort)
-        appendUsage(env, email, "/api/si/ask", Number(out.tokens_in || 0), Number(out.tokens_out || 0), creditsUsed, {
-          provider: out.provider, model: out.model, skill
-        }).catch(() => {});
+      // Workers AI binding check
+      if (p === "/api/ai/binding") {
+        const ok = !!(env as any).AI && typeof (env as any).AI.run === "function";
+        return json({ ai_bound: ok }, req, env, ok ? 200 : 500);
+      }
 
-        // deduct credits if possible
-        let updatedBalance: number | null = null;
-        if (creditsUsed > 0 && email) {
-          try {
-            const row = await adjustBalance(env, email, -creditsUsed);
-            updatedBalance = row.balance_credits;
-          } catch { /* ignore */ }
+      // Workers AI test
+      if (p === "/api/ai/test") {
+        if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
+        let body: any = {}; try { body = await req.json(); } catch {}
+        const prompt = (body?.prompt ?? "Say 'pong'").toString();
+        const model = pickCfModel(env);
+        try {
+          const result = await (env as any).AI.run(model, { messages: [{ role: "user", content: prompt }], max_tokens: 64 });
+          const text = normalizeWorkersAiText(result);
+          return json({ ok: true, model, output: text }, req, env, 200);
+        } catch (e: any) {
+          return json({ ok: false, error: "ai_run_failed", detail: String(e?.message || e) }, req, env, 500);
+        }
+      }
+
+      // Admin ping — quick secret check
+      if (p === "/api/admin/ping") {
+        const k = req.headers.get("X-Admin-Key") || req.headers.get("X-Admin-Token") || "";
+        const ok = !!env.ADMIN_API_KEY && k === env.ADMIN_API_KEY;
+        return json({ ok }, req, env, ok ? 200 : 401);
+      }
+
+      // Admin cleanup
+      if (p === "/api/admin/cleanup") {
+        return handleAdminCleanup(req, env);
+      }
+
+      // Direct upload to R2
+      if (p === "/api/upload/direct") {
+        if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
+        return handleUploadDirect(req, env);
+      }
+
+      // SI ask (provider-ordered chat + usage + credit deduct + headers)
+      if (p === "/api/si/ask" || p === "/si/ask") {
+        if (req.method !== "POST") return json({ error: "method_not_allowed" }, req, env, 405);
+
+        const email = getCallerEmail(req) || "anonymous";
+        let body: any = {}; try { body = await req.json(); } catch {}
+        const skill = (body?.skill ?? "general").toString();
+        const input = (body?.input ?? "").toString();
+
+        const messages: ChatMessage[] = [
+          { role: "system", content: `You are a helpful assistant. Skill="${skill}". Keep replies concise.` },
+          { role: "user",   content: input || "Say hello." }
+        ];
+
+        // ---- credits pre-check: block if empty (except guests) ----
+        const isGuest = (email || "").startsWith("guest:");
+        const balRow = await getBalance(env, email);
+        if (!isGuest && (balRow.balance_credits ?? 0) <= 0) {
+          return json(
+            { error: "insufficient_credits", balance_credits: balRow.balance_credits },
+            req,
+            env,
+            402, // Payment Required
+          );
         }
 
-        const extraHeaders: Record<string, string> = {
-          "X-Provider": out.provider,
-          "X-Model": out.model,
-          "X-Tokens-In": String(out.tokens_in ?? 0),
-          "X-Tokens-Out": String(out.tokens_out ?? 0),
-          "X-Credits-Used": creditsUsed.toFixed(3),
-        };
-        if (updatedBalance !== null) extraHeaders["X-Credits-Balance"] = updatedBalance.toFixed(3);
+        try {
+          const out = await runPreferred(env, messages);
+          const creditsUsed = round3(creditsFor(Number(out.tokens_in || 0), Number(out.tokens_out || 0), env));
 
-        return json({ result: { content: out.text } }, req, env, 200, extraHeaders);
-      } catch (e: any) {
-        return json({ error: "si_ask_failed", detail: String(e?.message || e) }, req, env, 502);
+          // log usage (best-effort)
+          appendUsage(env, email, "/api/si/ask", Number(out.tokens_in || 0), Number(out.tokens_out || 0), creditsUsed, {
+            provider: out.provider, model: out.model, skill
+          }).catch(() => {});
+
+          // deduct credits if possible (skip for guests)
+          let updatedBalance: number | null = null;
+          if (!isGuest && creditsUsed > 0 && email) {
+            try {
+              const row = await adjustBalance(env, email, -creditsUsed);
+              updatedBalance = row.balance_credits;
+            } catch { /* ignore */ }
+          }
+
+          const extraHeaders: Record<string, string> = {
+            "X-Provider": out.provider,
+            "X-Model": out.model,
+            "X-Tokens-In": String(out.tokens_in ?? 0),
+            "X-Tokens-Out": String(out.tokens_out ?? 0),
+            "X-Credits-Used": creditsUsed.toFixed(3),
+          };
+          if (updatedBalance !== null) extraHeaders["X-Credits-Balance"] = updatedBalance.toFixed(3);
+
+          return json({ result: { content: out.text } }, req, env, 200, extraHeaders);
+        } catch (e: any) {
+          return json({ error: "si_ask_failed", detail: String(e?.message || e) }, req, env, 502);
+        }
       }
-    }
 
-    // Not found
-    return json({ error: "not_found", path: p }, req, env, 404);
+      // Not found
+      return json({ error: "not_found", path: p }, req, env, 404);
+    } catch (err: any) {
+      // Top-level safety net: always send JSON with CORS
+      return json(
+        { error: "internal_error", message: String(err?.message ?? err) },
+        req,
+        env,
+        500
+      );
+    }
   }
 };

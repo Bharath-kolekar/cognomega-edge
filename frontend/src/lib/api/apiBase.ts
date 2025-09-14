@@ -41,6 +41,7 @@ function resolveBase(): string {
     if (manual && manual.trim()) {
       _base = manual.trim().replace(/\/+$/, "");
       (globalThis as any).__cogApiBase = _base;
+      (globalThis as any).__apiBase = _base; // <- compatibility alias
       return _base;
     }
   } catch {}
@@ -48,6 +49,7 @@ function resolveBase(): string {
   const forced = readEnvBase() || "https://api.cognomega.com";
   _base = forced.replace(/\/+$/, "");
   (globalThis as any).__cogApiBase = _base;
+  (globalThis as any).__apiBase = _base; // <- compatibility alias
   return _base;
 }
 
@@ -79,6 +81,7 @@ export async function ensureApiEndpoints(): Promise<ApiEndpoints> {
 
   _eps = endpoints;
   (globalThis as any).__cogApiEndpoints = endpoints;
+  (globalThis as any).__apiEndpoints = endpoints; // <- compatibility alias
   return endpoints;
 }
 

@@ -3,20 +3,20 @@ import {
   apiUrl,
   readUserEmail,
   ensureApiBase,
-  currentApiBase,
 } from "./lib/api/apiBase";
 
 /* global window */
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { CreateWebWorkerMLCEngine } from "@mlc-ai/web-llm";
 import CreditPill from "./components/CreditPill";
-import UsageFeed from "./components/UsageFeed";
 import LaunchInBuilder from "./components/LaunchInBuilder";
+import UsageFeed from "./components/UsageFeed";
 
 declare global {
   interface Window {
     turnstile?: any;
     __cogAuthReady?: Promise<string | null>;
+    __apiBase?: string;
   }
 }
 
@@ -47,7 +47,7 @@ type UploadResp =
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
 
-// ---- local prompt capture for UsageFeed matching ----
+// ---- local prompt capture for (optional) usage matching ----
 const LS_KEY = "cm_usage_prompts";
 const MAX_PROMPTS = 200;
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -146,7 +146,6 @@ export default function App() {
   const [authMsg, setAuthMsg] = useState<string>("initializing...");
   const [authReady, setAuthReady] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [resolvedBase, setResolvedBase] = useState<string>("");
 
   // Poll/download UI state (kept for other features)
   const [jobId, setJobId] = useState<string | null>(null);
@@ -173,6 +172,9 @@ export default function App() {
   const pollAbort = useRef<AbortController | null>(null);
   const pollTimer = useRef<number | null>(null);
   const pollStart = useRef<number>(0);
+
+  // Resolved API base for child components (UsageFeed)
+  const [resolvedBase, setResolvedBase] = useState<string>("");
 
   // ---------- helpers ----------
   const cleanHeaders = useCallback(() => {
@@ -302,7 +304,8 @@ export default function App() {
     (async () => {
       try {
         await ensureApiBase();
-        setResolvedBase(currentApiBase());
+        // << requested change >>
+        setResolvedBase((window as any).__apiBase ?? "");
       } catch {}
 
       try {
@@ -346,7 +349,7 @@ export default function App() {
     if (TS_SITE) {
       iv = setInterval(() => {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
-          widRef.current = window.turnstile.render(tsDivRef.current, {
+          widRef.current = window.turnstile.render(tsDivRefRef.current, {
             sitekey: TS_SITE,
             appearance: "execute",
             size: "flexible",
@@ -622,8 +625,12 @@ export default function App() {
         {resp}
       </pre>
 
-      {/* Always pass a real string for apiBase. "" in dev is OK. */}
-      <UsageFeed email={readUserEmail() || ""} apiBase={resolvedBase} refreshMs={3000} />
+      {/* Recent usage (30s refresh, quiet on preview due to CORS) */}
+      <UsageFeed
+        email={readUserEmail() || ""}
+        apiBase={resolvedBase}
+        refreshMs={30000} // 30s to avoid hammering if backend hiccups
+      />
 
       <hr />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -633,55 +640,6 @@ export default function App() {
           {uploading ? "Uploading..." : "Upload"}
         </button>
       </div>
-
-      {(jobId || job || error || info) && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            border: "1px solid #ddd",
-            borderRadius: 8,
-            background: "#fafafa",
-          }}
-        >
-          {jobId && (
-            <div style={{ fontSize: 12, color: "#555", marginBottom: 6 }}>
-              Job: <code style={{ fontSize: 11 }}>{jobId}</code>
-            </div>
-          )}
-          {job && (
-            <>
-              <div style={{ fontSize: 14 }}>
-                <strong>Status:</strong> {job.status}
-                {typeof job.progress !== "undefined" &&
-                  job.progress !== null && <> - {String(job.progress)}%</>}
-              </div>
-              {isDone && (
-                <div style={{ paddingTop: 8 }}>
-                  <button
-                    onClick={onDownload}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 6,
-                      background: "#16a34a",
-                      color: "#fff",
-                      border: 0,
-                    }}
-                  >
-                    Download result
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          {info && <div style={{ fontSize: 14, color: "#444", marginTop: 4 }}>{info}</div>}
-          {error && (
-            <div style={{ fontSize: 14, color: "#b91c1c", marginTop: 4 }}>
-              Error: {error}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Invisible Turnstile container */}
       <div ref={tsDivRef} />

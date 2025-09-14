@@ -1,0 +1,1 @@
+const t=import.meta?.env?.VITE_API_BASE?.trim(),a=t&&t.length>0?t:"https://api.cognomega.com",n="guest_token";function c(){const e=(typeof window<"u"?localStorage.getItem(n):"")||"",o={Accept:"application/json"};return e&&(o.Authorization=`Bearer ${e}`),o}export{a,c as b};
