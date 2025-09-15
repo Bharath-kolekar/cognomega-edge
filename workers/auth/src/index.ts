@@ -548,10 +548,13 @@ async function processSiJob(env: Env, jobId: string): Promise<void> {
     const out = await runPreferred(env, messages);
     const creditsUsed = round3(creditsFor(Number(out.tokens_in || 0), Number(out.tokens_out || 0), env));
 
-    // usage (best-effort)
-    appendUsage(env, email, "/api/jobs:si", Number(out.tokens_in || 0), Number(out.tokens_out || 0), creditsUsed, {
-      provider: out.provider, model: out.model, skill, job_id: job0.id
-    }).catch(() => {});
+    // usage (durable)
+    await appendUsage(env, email, "/api/jobs:si",
+      Number(out.tokens_in || 0),
+      Number(out.tokens_out || 0),
+      creditsUsed,
+      { provider: out.provider, model: out.model, skill, job_id: job0.id }
+    );
 
     // deduct credits (skip for guests)
     let balanceAfter: number | undefined;
@@ -1068,10 +1071,18 @@ export default {
           const out = await runPreferred(env, messages);
           const creditsUsed = round3(creditsFor(Number(out.tokens_in || 0), Number(out.tokens_out || 0), env));
 
-          // log usage (best-effort)
-          appendUsage(env, email, "/api/si/ask", Number(out.tokens_in || 0), Number(out.tokens_out || 0), creditsUsed, {
-            provider: out.provider, model: out.model, skill
-          }).catch(() => {});
+          // log usage (durable via waitUntil to survive response end)
+          ctx.waitUntil(
+            appendUsage(
+              env,
+              email,
+              "/api/si/ask",
+              Number(out.tokens_in || 0),
+              Number(out.tokens_out || 0),
+              creditsUsed,
+              { provider: out.provider, model: out.model, skill }
+            ).then(() => {}).catch(() => {})
+          );
 
           // deduct credits if possible (skip for guests)
           let updatedBalance: number | null = null;
