@@ -25,3 +25,4 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+workers/auth/_incoming_*
