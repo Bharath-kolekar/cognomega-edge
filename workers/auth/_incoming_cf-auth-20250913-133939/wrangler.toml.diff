@@ -1,0 +1,18 @@
+diff --git "a/C:\\dev\\cognomega-edge\\workers\\auth\\wrangler.toml" "b/C:\\dev\\cognomega-edge\\workers\\auth\\_incoming_cf-auth-20250913-133939\\wrangler.toml"
+index 7b9238f..d4116df 100644
+--- "a/C:\\dev\\cognomega-edge\\workers\\auth\\wrangler.toml"
++++ "b/C:\\dev\\cognomega-edge\\workers\\auth\\_incoming_cf-auth-20250913-133939\\wrangler.toml"
+@@ -1,4 +1,4 @@
+-name = "cognomega-auth"
++﻿name = "cognomega-auth"
+ main = "src/index.ts"
+ compatibility_date = "2025-09-03"
+ 
+@@ -44,7 +44,3 @@ binding = "KV_BILLING"
+ id = "5da314a8b48b4db684678ab5ad074563"
+ preview_id = "d4065042d02f493fb6176d36609dc133"
+ 
+-[[r2_buckets]]
+-binding = "R2_UPLOADS"
+-bucket_name = "cognomega-uploads"
+-preview_bucket_name = "cognomega-uploads"

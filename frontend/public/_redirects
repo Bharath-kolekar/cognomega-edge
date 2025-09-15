@@ -1,4 +1,1 @@
-﻿/ready            /api/v1/healthz       200
-/billing/usage    /api/billing/usage    200
-/credits/balance  /api/billing/balance  200
-/billing/balance  /api/billing/balance  200
+/*    /index.html   200

@@ -1,35 +1,30 @@
 // cf-auth/src/index.ts
-// Cognomega Auth/JWKS/Usage/Jobs/AI/Uploads Worker (RS256; KV-backed JWKS, Credits, Usage; strict CORS)
+// Cognomega Unified Worker (Production)
+// - RS256 guest auth; KV-backed JWKS, Credits, Usage, Jobs
+// - AI orchestrator (groq → cfai → openai) with usage + credit headers
+// - Direct R2 uploads
+// - Tolerant CORS (echo Origin while ALLOWED_ORIGINS unset)
+// - Top-level try/catch so all errors carry CORS
+// - Usage route guarded to avoid raw 500s
 //
-// Endpoints (highlights):
-//   POST /auth/guest | /api/auth/guest | /api/v1/auth/guest   -> { token, exp }
-//   GET  /.well-known/jwks.json                               -> { keys: [...] } (public)
-//   GET  /api/credits | /credits | /api/v1/credits            -> { email, balance_credits, updated_at, credits, updated }
-//   POST /api/credits/adjust                                  -> Admin adjust/set credits
-//
-//   POST /api/billing/usage | GET /api/billing/usage          -> usage append/list (aliases supported)
-//   POST /api/jobs | GET /api/jobs | GET /api/jobs/:id | PATCH /api/jobs/:id
-//   POST /api/jobs/run                                         -> Fire-and-wait SI job
-//
-//   POST /api/si/ask                                          -> provider-ordered chat (groq → cfai → openai) with usage & credit headers
-//
-//   POST /api/upload/direct                                   -> raw-body direct upload to R2 (env.R2_UPLOADS)
-//
+// Endpoints (selected):
+//   POST /auth/guest | /api/auth/guest | /api/v1/auth/guest
+//   GET  /.well-known/jwks.json
+//   GET  /api/credits | /credits | /api/v1/credits
+//   POST /api/credits/adjust
+//   GET/POST /api/billing/usage   (aliases: /api/usage, /usage, /api/v1/usage, /api/v1/billing/usage)
+//   GET/POST /api/jobs;  GET/PATCH /api/jobs/:id;  POST /api/jobs/run
+//   POST /api/si/ask
+//   POST /api/upload/direct
 //   GET  /ready | /healthz | /api/ready | /api/healthz | /api/v1/healthz
-//
-//   GET  /api/ai/binding                                      -> { ai_bound: boolean }
-//   POST /api/ai/test                                         -> { ok, model, output }
-//
-//   GET  /api/admin/ping                                      -> { ok } (requires X-Admin-Key)
-//   POST /api/admin/cleanup                                   -> cleanup old usage/jobs (requires X-Admin-Key)
-//
-// CORS is controlled by env.ALLOWED_ORIGINS (comma-separated).
-// KEYS (KV) must contain "jwks". PRIVATE_KEY_PEM secret must be set.
-// Credits & Usage & Jobs share KV_BILLING.
+//   GET  /api/ai/binding
+//   POST /api/ai/test
+//   GET  /api/admin/ping
+//   POST /api/admin/cleanup
 
 export interface Env {
   // Vars
-  ALLOWED_ORIGINS: string;
+  ALLOWED_ORIGINS?: string;
   ISSUER?: string;
   JWT_TTL_SEC?: string;
   KID?: string;
@@ -40,16 +35,16 @@ export interface Env {
   CF_AI_MODEL?: string;        // e.g. "@cf/meta/llama-3.1-8b-instruct"
   OPENAI_MODEL?: string;       // e.g. "gpt-4o-mini"
   OPENAI_BASE?: string;        // defaults to https://api.openai.com/v1
+  GROQ_BASE?: string;          // defaults to https://api.groq.com/openai/v1
   CREDIT_PER_1K?: string;      // credits charged per 1k tokens (input+output)
 
   // Uploads
-  MAX_UPLOAD_BYTES?: string;   // optional, default 10 * 1024 * 1024
+  MAX_UPLOAD_BYTES?: string;   // default 10 * 1024 * 1024
 
   // Secrets
   PRIVATE_KEY_PEM?: string;
   GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
-  GROQ_BASE?: string;          // optional: override (default https://api.groq.com/openai/v1)
   ADMIN_API_KEY?: string;      // for /api/credits/adjust and admin routes
 
   // Bindings
@@ -98,7 +93,7 @@ function nowSeconds() { return Math.floor(Date.now() / 1000); }
 const ALLOW_HEADERS  = "Authorization, Content-Type, X-User-Email, x-user-email, X-Admin-Key, X-Admin-Token";
 const EXPOSE_HEADERS = "X-Credits-Used, X-Credits-Balance, X-Tokens-In, X-Tokens-Out, X-Provider, X-Model";
 
-// ---- tolerant CORS: echo Origin if ALLOWED_ORIGINS is unset
+// Tolerant CORS: echo Origin if ALLOWED_ORIGINS is unset
 function corsHeaders(req: Request, env: Env): Headers {
   const origin = req.headers.get("Origin") || "";
   const allowed = (env.ALLOWED_ORIGINS || "")
@@ -151,7 +146,7 @@ async function getJWKS(env: Env): Promise<{ keys: any[] }> {
   return { keys: [] };
 }
 
-// ---------- Email helpers
+// ---------- Email + JWT helpers
 
 function b64uToUtf8(s: string): string {
   s = s.replace(/-/g, "+").replace(/_/g, "/");
@@ -230,7 +225,7 @@ async function signJwtRS256(
   return { token, exp };
 }
 
-// ---------- Credits store (KV_BILLING)
+// ---------- Credits (KV_BILLING)
 
 type BalanceRow = { balance_credits: number; updated_at: string };
 function balKey(email: string) { return `balance:${email}`; }
@@ -534,7 +529,7 @@ async function processSiJob(env: Env, jobId: string): Promise<void> {
   const input = (job0.params?.["input"] ?? "").toString();
 
   try {
-    // credits pre-check (same behavior as /api/si/ask) — bypass for guests
+    // credits pre-check — bypass for guests
     const isGuest = (email || "").startsWith("guest:");
     const balRow = await getBalance(env, email);
     if (!isGuest && (balRow.balance_credits ?? 0) <= 0) {
@@ -558,7 +553,7 @@ async function processSiJob(env: Env, jobId: string): Promise<void> {
       provider: out.provider, model: out.model, skill, job_id: job0.id
     }).catch(() => {});
 
-    // deduct credits (skip for guests during free mode)
+    // deduct credits (skip for guests)
     let balanceAfter: number | undefined;
     if (!isGuest && creditsUsed > 0) {
       try {
@@ -725,7 +720,8 @@ async function handleJwks(req: Request, env: Env): Promise<Response> {
 }
 
 function handleReady(req: Request, env: Env): Response {
-  const ok = Boolean(env.PRIVATE_KEY_PEM) && Boolean(env.ALLOWED_ORIGINS);
+  // stricter: require PRIVATE_KEY_PEM and ALLOWED_ORIGINS to be present for "ok"
+  const ok = Boolean(env.PRIVATE_KEY_PEM) && (env.ALLOWED_ORIGINS !== undefined);
   return json({ ok }, req, env, ok ? 200 : 500);
 }
 
@@ -780,7 +776,6 @@ async function handleAdminCleanup(req: Request, env: Env): Promise<Response> {
     kept: { usage_keys: 0, job_index_keys: 0, job_rows: 0 },
   };
 
-  // helper: delete or count
   async function maybeDelete(key: string) {
     if (!dryRun) await env.KV_BILLING.delete(key);
   }
@@ -793,7 +788,6 @@ async function handleAdminCleanup(req: Request, env: Env): Promise<Response> {
       const list = await env.KV_BILLING.list({ prefix, cursor, limit: 1000 });
       for (const k of list.keys) {
         res.scanned.usage++;
-        // Read value to confirm created_at
         const v = await env.KV_BILLING.get(k.name);
         if (!v) { res.kept.usage_keys++; continue; }
         let ts = 0;
@@ -822,12 +816,11 @@ async function handleAdminCleanup(req: Request, env: Env): Promise<Response> {
       const list = await env.KV_BILLING.list({ prefix, cursor, limit: 1000 });
       for (const k of list.keys) {
         res.scanned.jobs_index++;
-        const id = await env.KV_BILLING.get(k.name); // value is job id
+        const id = await env.KV_BILLING.get(k.name);
         if (!id) { res.kept.job_index_keys++; continue; }
         const row = await env.KV_BILLING.get(jobRowKey(id));
         res.scanned.jobs_rows_checked++;
         if (!row) {
-          // index points to missing row — safe to delete index
           await maybeDelete(k.name);
           res.deleted.job_index_keys++;
           if ((res.deleted.usage_keys + res.deleted.job_rows + res.deleted.job_index_keys) >= hardLimit) break outer2;
@@ -839,9 +832,9 @@ async function handleAdminCleanup(req: Request, env: Env): Promise<Response> {
           ts = Date.parse(job.created_at || "");
         } catch {}
         if (ts && ts < cutoffTs) {
-          await maybeDelete(k.name);                 // delete index
+          await maybeDelete(k.name);
           res.deleted.job_index_keys++;
-          await maybeDelete(jobRowKey(id));          // delete row
+          await maybeDelete(jobRowKey(id));
           res.deleted.job_rows++;
           if ((res.deleted.usage_keys + res.deleted.job_rows + res.deleted.job_index_keys) >= hardLimit) break outer2;
         } else {
@@ -920,7 +913,7 @@ async function handleUploadDirect(req: Request, env: Env): Promise<Response> {
   }, req, env, 200);
 }
 
-// ---------- Worker
+// ---------- Worker (router with top-level try/catch and guarded usage) ----------
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -954,7 +947,7 @@ export default {
         return handleCreditsAdjust(req, env);
       }
 
-      // Usage (guarded to never leak raw 500s)
+      // Usage (guard: never leak raw 500s)
       if (isUsagePath(p)) {
         if (req.method === "OPTIONS") return noContent(req, env);
         try {
@@ -1027,7 +1020,7 @@ export default {
         }
       }
 
-      // Admin ping — quick secret check
+      // Admin ping
       if (p === "/api/admin/ping") {
         const k = req.headers.get("X-Admin-Key") || req.headers.get("X-Admin-Token") || "";
         const ok = !!env.ADMIN_API_KEY && k === env.ADMIN_API_KEY;
