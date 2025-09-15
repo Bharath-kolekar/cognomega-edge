@@ -349,7 +349,7 @@ export default function App() {
     if (TS_SITE) {
       iv = setInterval(() => {
         if (window.turnstile && tsDivRef.current && !widRef.current) {
-          widRef.current = window.turnstile.render(tsDivRefRef.current, {
+          widRef.current = window.turnstile.render(tsDivRef.current, {
             sitekey: TS_SITE,
             appearance: "execute",
             size: "flexible",
