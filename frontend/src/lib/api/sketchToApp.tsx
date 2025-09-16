@@ -11,6 +11,7 @@
  *   - Intelligence tiers (human/advanced/super) with presets & skills
  *   - A/B telemetry headers (X-Intelligence-Tier, X-AB-Variant, X-Client-Id…)
  *   - Body telemetry (tier, AB, client id, skills, etc.)
+ *   - Safer parsing, header-size guards, and resilient job-id extraction
  */
 
 import { apiUrl, authHeaders, fetchJson, readUserEmail } from "./apiBase";
@@ -23,7 +24,7 @@ export type SketchToAppRequest = {
   name: string;
   pages?: string;
   description: string;
-  modelHint?: string;
+  modelHint?: string | null;
   intelligenceTier?: IntelligenceTier;
   /**
    * Arbitrary server-side settings. We also merge tier presets here.
@@ -106,7 +107,7 @@ const SKILLS_SUPER: SkillsBundle = {
 
 const SKILLS_ADV: SkillsBundle = {
   ...SKILLS_SUPER,
-  // tone down a few heavy steps by default
+  // (kept same defaults; tuned server-side)
   performance_budget: true,
   playwright_specs: true,
   rag_scaffold: true,
@@ -249,7 +250,7 @@ export async function startSketchToApp(
     skills: skillsMerged,
   };
 
-  // Tiny header-friendly skills summary (don’t blow header size)
+  // Tiny header-friendly skills summary (guard header size)
   const skillHeader = Object.entries(skillsMerged as Record<string, boolean>)
     .filter(([, v]) => !!v)
     .map(([k]) => k)
@@ -291,6 +292,7 @@ export async function startSketchToApp(
     "X-Client-TS": String(Date.now()),
     "X-Project-Name": safeName,
     "X-Project-Pages": safePages,
+    "X-Experiment": `SketchToApp_${tier}_${abVariant}`,
     "X-Skills": skillHeader,
     ...(user_email ? { "X-User-Email": user_email } : {}),
   };
@@ -304,20 +306,17 @@ export async function startSketchToApp(
     body: JSON.stringify(body),
   });
 
-  const ct = r.headers.get("content-type") || "";
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
   const data: any = ct.includes("application/json") ? await r.json() : await r.text();
 
   if (!r.ok) {
     const msg = (typeof data === "string" ? data : data?.error) || `${r.status} ${r.statusText}`;
-    return { ok: false, error: String(msg) };
+    return { ok: false, error: String(msg), meta: safeMeta(data) };
   }
 
   return {
     ok: true,
-    content:
-      (data?.result?.content as string) ??
-      (data?.content as string) ??
-      (typeof data === "string" ? data : undefined),
+    content: narrowContent(data),
     jobId:
       (data?.result?.jobId as string) ??
       (data?.jobId as string) ??
@@ -361,16 +360,23 @@ export async function createSketchToAppJob(
       body: file,
     });
 
-    const ct = res.headers.get("content-type") || "";
+    // Handle 202 Accepted + Location/X-Job-Id patterns
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
     const data: any = ct.includes("application/json") ? await res.json() : await res.text();
 
     if (!res.ok) {
       const msg = (typeof data === "string" ? data : data?.error) || `${res.status} ${res.statusText}`;
-      return { ok: false, error: String(msg) };
+      return { ok: false, error: String(msg), meta: safeMeta(data) };
     }
 
-    const jobId = pickJobId(data, res.headers);
-    const status = (data?.status as string) || "queued";
+    let jobId = pickJobId(data, res.headers);
+    if (!jobId) {
+      const loc = res.headers.get("Location") || res.headers.get("location");
+      const m = loc && /\/api\/jobs\/([^/?#]+)/i.exec(loc);
+      if (m && m[1]) jobId = m[1];
+    }
+
+    const status = (data?.status as string) || (res.status === 202 ? "queued" : "working");
     const key = (data?.key as string) || undefined;
 
     if (jobId) return { ok: true, jobId, status, key, meta: safeMeta(data) };
@@ -424,6 +430,17 @@ export async function downloadJobArtifact(jobId: string): Promise<void> {
 
 /* --------------------------------- Helpers --------------------------------- */
 
+function narrowContent(data: any): string | undefined {
+  if (!data) return undefined;
+  if (typeof data === "string") return data;
+  return (
+    (data?.result?.content as string) ??
+    (data?.content as string) ??
+    (data?.message as string) ??
+    undefined
+  );
+}
+
 function pickJobId(data: any, headers: Headers): string | null {
   const headerId = headers.get("X-Job-Id") || headers.get("x-job-id");
   if (headerId && headerId.trim()) return headerId.trim();
@@ -433,10 +450,14 @@ function pickJobId(data: any, headers: Headers): string | null {
 
 function parseFilenameFromContentDisposition(cd: string): string | null {
   try {
-    const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-    if (m && m[1]) {
-      try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+    // Prefer RFC5987 filename* if present
+    const star = cd.match(/filename\*=(?:UTF-8'')?([^;]+)/i);
+    if (star && star[1]) {
+      const raw = star[1].replace(/^"+|"+$/g, "");
+      try { return decodeURIComponent(raw); } catch { return raw; }
     }
+    const m = cd.match(/filename="?([^";]+)"?/i);
+    if (m && m[1]) return m[1];
     return null;
   } catch { return null; }
 }

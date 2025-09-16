@@ -5,6 +5,9 @@
  * - Speaks contextual tips on hover/focus with throttling & per-element cooldown.
  * - Toggle button persists in localStorage.
  * - You can add data-voice-hint="Your custom hint" to any element.
+ * - Keyboard:
+ *    • Alt+V — toggle on/off
+ *    • Alt+H — speak hint for the currently focused element
  *
  * Usage:
  *   <VoiceGuide
@@ -31,8 +34,14 @@ type Props = {
   volume?: number;                // 0 - 1
   // Fallback hints by CSS selector. Elements with data-voice-hint take precedence.
   selectors?: SelectorHints;
+  // Optionally skip hints for elements matching these selectors (comma-separated).
+  skipSelectors?: string;
   // Where to mount the floating toggle (default bottom-right)
   position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  // Hide the floating toggle if Speech Synthesis is unsupported (default: false)
+  hideIfUnsupported?: boolean;
+  // Enable Alt+V (toggle) and Alt+H (read focused)
+  hotkeys?: boolean;
 };
 
 const LS_KEY = "cm_voice_guide_enabled";
@@ -54,7 +63,10 @@ export default function VoiceGuide({
   pitch = 1.0,
   volume = 1.0,
   selectors,
+  skipSelectors,
   position = "bottom-right",
+  hideIfUnsupported = false,
+  hotkeys = true,
 }: Props) {
   const [enabled, setEnabled] = useState<boolean>(() => {
     try {
@@ -116,11 +128,30 @@ export default function VoiceGuide({
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
+  // Hotkeys: Alt+V toggle, Alt+H read hint for focused element
+  useEffect(() => {
+    if (!hotkeys) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.altKey && !e.ctrlKey && !e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "v") {
+        e.preventDefault();
+        setEnabled((v) => !v);
+      } else if (k === "h") {
+        e.preventDefault();
+        const el = (document.activeElement as Element) || null;
+        maybeSpeakFor(el, /*force*/ true);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [hotkeys]);
+
   // Event listeners
   useEffect(() => {
     if (!enabled) return;
-    const onOver = (e: Event) => maybeSpeakFor(e.target as Element);
-    const onFocus = (e: Event) => maybeSpeakFor(e.target as Element);
+    const onOver = (e: Event) => maybeSpeakFor(targetFromEvent(e));
+    const onFocus = (e: Event) => maybeSpeakFor(targetFromEvent(e));
 
     document.addEventListener("mouseover", onOver, true);
     document.addEventListener("focusin", onFocus, true);
@@ -129,7 +160,15 @@ export default function VoiceGuide({
       document.removeEventListener("focusin", onFocus, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, selectors]);
+  }, [enabled, selectors, skipSelectors, rateLimitMs, perElemCooldownMs]);
+
+  function targetFromEvent(e: Event): Element | null {
+    const t = e.target as Element | null;
+    if (!t) return null;
+    // Prefer closest element with a hint or role
+    const hinted = (t.closest("[data-voice-hint]") as Element) || t;
+    return hinted;
+  }
 
   function pickVoice(): SpeechSynthesisVoice | null {
     const list = voicesRef.current || [];
@@ -171,8 +210,24 @@ export default function VoiceGuide({
     window.speechSynthesis.speak(u);
   }
 
+  function isSkipped(el: Element | null): boolean {
+    if (!el) return true;
+    if ((el as HTMLElement).dataset?.voiceSkip === "1") return true;
+    if (skipSelectors && skipSelectors.trim()) {
+      try {
+        return !!el.closest(skipSelectors);
+      } catch {
+        // invalid selector — ignore
+      }
+    }
+    return false;
+  }
+
   function hintFor(el: Element | null): string | null {
     if (!el) return null;
+
+    // 0) skip if requested
+    if (isSkipped(el)) return null;
 
     // 1) explicit hint attribute
     const withAttr = el.closest("[data-voice-hint]") as HTMLElement | null;
@@ -187,8 +242,22 @@ export default function VoiceGuide({
       }
     }
 
-    // 3) common fallbacks
-    const tag = (el as HTMLElement).tagName?.toLowerCase?.() || "";
+    // 3) ARIA/title/placeholder synthesis
+    const he = el as HTMLElement;
+    const aria = he.getAttribute?.("aria-label");
+    const title = he.getAttribute?.("title");
+    const ph =
+      he.getAttribute?.("placeholder") ||
+      (he.tagName?.toLowerCase() === "input"
+        ? (he as HTMLInputElement).placeholder
+        : "");
+    const labelFromAttr = aria || title || ph;
+    if (labelFromAttr && labelFromAttr.trim()) {
+      return normalizeSentence(labelFromAttr.trim());
+    }
+
+    // 4) element type fallbacks
+    const tag = he.tagName?.toLowerCase?.() || "";
     if (tag === "textarea")
       return "Type your prompt here. Press control or command and enter to submit.";
     if (tag === "button") return "Click to perform an action.";
@@ -197,8 +266,16 @@ export default function VoiceGuide({
     return null;
   }
 
-  function maybeSpeakFor(el: Element | null) {
-    if (!enabled || !el || speakingRef.current) return;
+  function normalizeSentence(s: string): string {
+    const t = s.replace(/\s+/g, " ").trim();
+    if (!t) return t;
+    const ends = /[.!?]$/;
+    return ends.test(t) ? t : `${t}.`;
+  }
+
+  function maybeSpeakFor(el: Element | null, force = false) {
+    if (!enabled || !el) return;
+    if (!force && speakingRef.current) return;
 
     // Respect reduced motion / user preference: silently return
     try {
@@ -211,10 +288,14 @@ export default function VoiceGuide({
 
     const now = Date.now();
     const last = elemCooldown.current.get(el) || 0;
-    if (now - last < perElemCooldownMs) return;
+    if (!force && now - last < perElemCooldownMs) return;
 
     elemCooldown.current.set(el, now);
     speak(msg);
+  }
+
+  if (hideIfUnsupported && !supportsSpeech()) {
+    return null;
   }
 
   return (
@@ -224,7 +305,11 @@ export default function VoiceGuide({
       aria-label={enabled ? "Disable voice guide" : "Enable voice guide"}
       onClick={() => setEnabled((v) => !v)}
       style={posStyle}
-      title={enabled ? "Voice Guide: on" : "Voice Guide: off"}
+      title={
+        enabled
+          ? "Voice Guide: on (Alt+V to toggle, Alt+H to read focused)"
+          : "Voice Guide: off (Alt+V to toggle)"
+      }
     >
       <span
         style={{

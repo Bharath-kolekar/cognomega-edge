@@ -1,6 +1,6 @@
 // frontend/src/components/UsageFeed.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiUrl } from "../lib/api/apiBase";
+import { apiUrl, authHeaders, readUserEmail } from "../lib/api/apiBase";
 
 type Props = {
   /** Optional; guests may not have an email. */
@@ -9,6 +9,8 @@ type Props = {
   apiBase?: string | unknown;
   /** Poll interval (ms). Default 30s. */
   refreshMs?: number;
+  /** Maximum rows to render. Default 10. */
+  limit?: number;
 };
 
 type UsageEvent = {
@@ -17,6 +19,8 @@ type UsageEvent = {
   tokens_in?: number;
   tokens_out?: number;
   cost_credits?: number;
+  // passthrough for any other props the server might return
+  [k: string]: any;
 };
 
 type LocalPrompt = { ts: number; text: string };
@@ -52,47 +56,12 @@ function matchPrompt(evTimeMs: number, prompts: LocalPrompt[]): string | undefin
   return best?.text;
 }
 
-function clip(s: string, n = 100): string {
+function clip(s: string, n = 120): string {
   const t = (s || "").replace(/\s+/g, " ").trim();
   return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
 
-/* ----------------------------- auth helpers ----------------------------- */
-/** Read a bearer token from localStorage (handles our current + legacy keys). */
-function readToken(): string | null {
-  try {
-    // Preferred JSON payload: { token, exp }
-    const saved = localStorage.getItem("cog_auth_jwt");
-    if (saved) {
-      try {
-        const j = JSON.parse(saved);
-        if (j?.token && typeof j.token === "string") return j.token;
-      } catch {
-        /* ignore JSON parse error */
-      }
-    }
-    // Back-compat fallbacks (string tokens)
-    const jwt = localStorage.getItem("jwt");
-    if (jwt && jwt.trim()) return jwt.trim();
-    const guest = localStorage.getItem("guest_token");
-    if (guest && guest.trim()) return guest.trim();
-  } catch {
-    /* ignore storage errors (SSR/sandbox) */
-  }
-  return null;
-}
-
-/** Read user email from prop or localStorage as a fallback. */
-function readEmailFromAny(propEmail?: string | null): string | null {
-  if (propEmail && propEmail.trim()) return propEmail.trim();
-  try {
-    const e = localStorage.getItem("user_email");
-    if (e && e.trim()) return e.trim();
-  } catch {}
-  return null;
-}
-
-/* --------------------------- URL construction --------------------------- */
+/* ----------------------------- url helpers ----------------------------- */
 function joinBase(base: Props["apiBase"], path: string): string {
   const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
   if (typeof base !== "string" || !base.trim()) {
@@ -105,13 +74,27 @@ function joinBase(base: Props["apiBase"], path: string): string {
 /* --------------------------- Response normalization --------------------------- */
 function normalizeUsagePayload(data: any): UsageEvent[] {
   // Accept a few common shapes:
-  // 1) { events: UsageEvent[] }
-  // 2) { items: [...]}  (map best-effort)
-  // 3) UsageEvent[]
+  // 1) { usage: UsageEvent[] }
+  // 2) { items: UsageEvent[] }
+  // 3) { data: UsageEvent[] }
+  // 4) { events: UsageEvent[] }
+  // 5) UsageEvent[]
   if (Array.isArray(data)) return data as UsageEvent[];
+
+  if (Array.isArray(data?.usage)) return data.usage as UsageEvent[];
+  if (Array.isArray(data?.items)) return (data.items as UsageEvent[]);
+  if (Array.isArray(data?.data)) return (data.data as UsageEvent[]);
   if (Array.isArray(data?.events)) return data.events as UsageEvent[];
-  if (Array.isArray(data?.items)) {
-    return (data.items as any[]).map((it) => ({
+
+  // Best-effort mapping if the items are in a slightly different shape
+  const src =
+    (Array.isArray(data?.items) && data.items) ||
+    (Array.isArray(data?.usage?.items) && data.usage.items) ||
+    (Array.isArray(data?.results) && data.results) ||
+    null;
+
+  if (Array.isArray(src)) {
+    return (src as any[]).map((it) => ({
       created_at:
         it.created_at ??
         it.timestamp ??
@@ -121,8 +104,10 @@ function normalizeUsagePayload(data: any): UsageEvent[] {
       tokens_in: it.tokens_in ?? it.tin ?? it.in ?? undefined,
       tokens_out: it.tokens_out ?? it.tout ?? it.out ?? undefined,
       cost_credits: it.cost_credits ?? it.credits ?? it.cost ?? undefined,
+      ...it,
     }));
   }
+
   return [];
 }
 
@@ -131,6 +116,7 @@ export default function UsageFeed({
   email,
   apiBase,
   refreshMs = 30000, // 30s default
+  limit = 10,
 }: Props) {
   const [items, setItems] = useState<UsageEvent[]>([]);
   const [loading, setLoad] = useState(true);
@@ -182,12 +168,14 @@ export default function UsageFeed({
       const ac = new AbortController();
       abortRef.current = ac;
 
-      // Build headers; include Authorization + X-User-Email if available
-      const headers: Record<string, string> = { Accept: "application/json" };
-      const tok = readToken();
-      if (tok) headers["Authorization"] = `Bearer ${tok}`;
-      const who = readEmailFromAny(email || undefined);
-      if (who) headers["X-User-Email"] = who;
+      // Compose headers using authHeaders + optional email
+      const who =
+        (typeof email === "string" && email.trim() ? email.trim() : null) || readUserEmail() || undefined;
+
+      const headers = authHeaders({
+        Accept: "application/json",
+        ...(who ? { "X-User-Email": who } : {}),
+      }) as HeadersInit;
 
       // Try canonical first, then a few alternates (including /api/v1).
       const candidates = [
@@ -208,6 +196,8 @@ export default function UsageFeed({
             headers,
             cache: "no-store",
             signal: ac.signal,
+            credentials: "omit",
+            mode: "cors",
           });
 
           const ct = (r.headers.get("content-type") || "").toLowerCase();
@@ -254,7 +244,7 @@ export default function UsageFeed({
   useEffect(() => {
     setLoad(true);
     void load();
-    intervalRef.current = window.setInterval(load, refreshMs) as unknown as number;
+    intervalRef.current = window.setInterval(load, Math.max(5000, refreshMs)) as unknown as number;
     return () => {
       if (intervalRef.current) window.clearInterval(intervalRef.current);
       if (abortRef.current) {
@@ -296,7 +286,7 @@ export default function UsageFeed({
       (route.includes("ask") && route.includes("/api/"));
     if (isAsk) {
       const prompt = matchPrompt(new Date(x.created_at).getTime(), localPrompts);
-      return prompt ? `Q: ${clip(prompt, 120)}` : "Q: (prompt not captured locally)";
+      return prompt ? `Q: ${clip(prompt)}` : "Q: (prompt not captured locally)";
     }
     if (
       route.includes("/v1/files/upload") ||
@@ -308,7 +298,7 @@ export default function UsageFeed({
     return "Usage";
   };
 
-  const rows = items.slice(0, 10);
+  const rows = items.slice(0, Math.max(1, limit));
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -346,10 +336,12 @@ export default function UsageFeed({
             <tbody>
               {rows.map((x, i) => {
                 const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-                const tIn = x.tokens_in ?? 0;
-                const tOut = x.tokens_out ?? 0;
+                const tIn = Number.isFinite(Number(x.tokens_in)) ? Number(x.tokens_in) : 0;
+                const tOut = Number.isFinite(Number(x.tokens_out)) ? Number(x.tokens_out) : 0;
                 const cr =
-                  typeof x.cost_credits === "number" ? x.cost_credits.toFixed(3) : "0.000";
+                  typeof x.cost_credits === "number"
+                    ? x.cost_credits.toFixed(3)
+                    : (Number.isFinite(Number(x.cost_credits)) ? Number(x.cost_credits).toFixed(3) : "0.000");
                 return (
                   <tr key={`${x.created_at}-${i}`} style={{ background: bg }}>
                     <td style={td}>{fmtWhen(x.created_at)}</td>

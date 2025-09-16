@@ -261,7 +261,7 @@ export default function App() {
 
   const fetchJSON = useCallback(
     async (url: string) => {
-      const r = await fetch(url, { headers: cleanHeaders() });
+      const r = await fetch(url, { headers: cleanHeaders(), credentials: "include", mode: "cors" });
       const ct = r.headers.get("content-type") || "";
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       if (!ct.includes("application/json")) {
@@ -326,6 +326,8 @@ export default function App() {
       const r = await fetch(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/download`), {
         method: "GET",
         headers: cleanHeaders(),
+        credentials: "include",
+        mode: "cors",
       });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
 
@@ -392,11 +394,15 @@ export default function App() {
         await (window as any).__cogAuthReady;
       } catch {}
 
-      const paths = ["/ready", "/api/ready", "/health", "/api/health", "/healthz", "/api/healthz"];
+      const paths = ["/ready", "/api/ready", "/health", "/api/health", "/healthz", "/api/healthz", "/api/v1/healthz"];
       let reported = false;
       for (const p of paths) {
         try {
-          const r = await fetch(apiUrl(p), { headers: { Accept: "application/json" } });
+          const r = await fetch(apiUrl(p), {
+            headers: { Accept: "application/json" },
+            credentials: "include",
+            mode: "cors",
+          });
           const ct = (r.headers.get("content-type") || "").toLowerCase();
           if (!r.ok || !ct.includes("application/json")) continue;
           const data = await r.json();
@@ -577,6 +583,8 @@ export default function App() {
           method: "POST",
           headers: { ...baseHeaders, "Content-Type": "application/json" },
           body: "{}",
+          credentials: "include",
+          mode: "cors",
         };
         const r = await fetch(c.url, init);
         const ct = r.headers.get("content-type") || "";
@@ -711,24 +719,43 @@ export default function App() {
         headers,
         body: JSON.stringify(body),
         signal: ac.signal,
+        credentials: "include",
+        mode: "cors",
       });
 
       const used = r.headers.get("X-Credits-Used") || "";
       const bal = r.headers.get("X-Credits-Balance") || "";
       const ct = (r.headers.get("content-type") || "").toLowerCase();
       const isJSON = ct.includes("application/json");
+      const isSSE = ct.includes("text/event-stream");
 
       // Try progressive read if not JSON and body is streamable
       if (stream && r.ok && r.body && !isJSON) {
         const reader = r.body.getReader();
         const decoder = new TextDecoder();
-        let acc = "";
+        let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          acc += decoder.decode(value, { stream: true });
-          setAskResp((prev) => prev + acc);
-          acc = "";
+          buffer += decoder.decode(value, { stream: true });
+
+          if (isSSE) {
+            // Minimal SSE "data:" line parsing
+            const parts = buffer.split("\n\n");
+            for (let i = 0; i < parts.length - 1; i++) {
+              const chunk = parts[i]
+                .split("\n")
+                .filter((l) => l.startsWith("data:"))
+                .map((l) => l.replace(/^data:\s?/, ""))
+                .join("\n");
+              if (chunk) setAskResp((prev) => prev + chunk);
+            }
+            buffer = parts[parts.length - 1];
+          } else {
+            // Plain text streaming
+            setAskResp((prev) => prev + buffer);
+            buffer = "";
+          }
         }
         // append billing line if provided
         if (used) setAskResp((prev) => prev + `\n\n[used: ${used} | balance: ${bal}]`);
@@ -776,6 +803,8 @@ export default function App() {
           "Content-Type": (f.type && f.type.trim()) || "application/octet-stream",
         },
         body: f,
+        credentials: "include",
+        mode: "cors",
       });
 
       const ct = r.headers.get("content-type") || "";
@@ -821,6 +850,7 @@ export default function App() {
 
       <p>API readiness: {health}</p>
       <p>Auth: {authMsg}</p>
+      <p>App is calling: {(resolvedBase && String(resolvedBase)) || "(base not resolved yet)"}</p>
 
       {/* Ask console with Tier + A/B + Skill + Streaming + System Prompt + Attachment */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 250px", gap: 12, marginTop: 12 }}>
@@ -920,7 +950,7 @@ export default function App() {
               Export .md
             </button>
             <button
-              onClick={() => navigator.clipboard.writeText(askResp || "")}
+              onClick={() => navigator.clipboard.writeText(askResp || "").catch(() => {})}
               title="Copy answer"
             >
               Copy

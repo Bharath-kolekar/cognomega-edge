@@ -1,6 +1,6 @@
 ﻿// frontend/src/pages/SketchToApp.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiUrl, authHeaders } from "../lib/api/apiBase";
+import { apiUrl, authHeaders, readUserEmail } from "../lib/api/apiBase";
 import LaunchInBuilder from "../components/LaunchInBuilder";
 import "../index.css";
 
@@ -11,7 +11,7 @@ type Job = {
 };
 
 type UploadResp =
-  | { ok: true; key: string; size: number; job_id: string; status: string }
+  | { ok: true; key?: string; size?: number; job_id?: string; jobId?: string; status?: string }
   | { error: string; [k: string]: any };
 
 const POLL_INTERVAL_MS = 1000;
@@ -62,12 +62,14 @@ async function mintGuestToken(): Promise<string | null> {
   const tries: Array<() => Promise<{ token?: string; exp?: number } | null>> = [
     async () => {
       try {
-        const r = await fetch(apiUrl("/auth/guest"), { method: "POST", headers: { Accept: "application/json" } });
+        const r = await fetch(apiUrl("/auth/guest"), { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: "{}" });
         if (!r.ok) return null;
         const ct = (r.headers.get("content-type") || "").toLowerCase();
         const j: any = ct.includes("application/json") ? await r.json() : await r.text();
-        const token = (typeof j === "string" ? j : j?.token || j?.jwt || j?.guest_token) || null;
-        const exp = typeof j === "object" ? Number(j?.exp ?? (j?.expires_in ? nowSec() + Number(j.expires_in) : undefined)) : undefined;
+        const token = (typeof j === "string" ? j : j?.token || j?.jwt || j?.guest_token || j?.access_token) || null;
+        const exp = typeof j === "object"
+          ? Number(j?.exp ?? j?.expires_at ?? (j?.expires_in ? nowSec() + Number(j.expires_in) : undefined))
+          : undefined;
         return token ? { token, exp } : null;
       } catch { return null; }
     },
@@ -114,13 +116,16 @@ async function ensureAuthToken(force = false): Promise<string | null> {
 }
 
 /** Build headers; never set content-type for multipart. */
-function makeHeaders(): Record<string, string> {
+function makeHeaders(extra?: Record<string, string>): Record<string, string> {
   const base = (authHeaders() as Record<string, string>) || {};
-  const h: Record<string, string> = { Accept: "application/json", ...base };
+  const h: Record<string, string> = { Accept: "application/json", ...base, ...(extra || {}) };
   if (!("Authorization" in h)) {
     const tok = readAnyToken();
     if (tok) h["Authorization"] = `Bearer ${tok}`;
   }
+  // include email if available
+  const em = readUserEmail();
+  if (em && !h["X-User-Email"]) h["X-User-Email"] = em;
   for (const k of Object.keys(h)) if (k.toLowerCase() === "content-type") delete h[k];
   return h;
 }
@@ -153,6 +158,15 @@ function pushPrompt(text: string) {
   const list = readPrompts();
   list.push({ ts: Date.now(), text: text.trim() });
   writePrompts(list);
+}
+
+/* ----------------------------- helpers ---------------------------------- */
+
+function pickJobId(data: any, headers: Headers): string | null {
+  const headerId = headers.get("X-Job-Id") || headers.get("x-job-id");
+  if (headerId && headerId.trim()) return headerId.trim();
+  const id = data?.jobId ?? data?.job_id ?? data?.id ?? data?.job?.id ?? null;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
 }
 
 /* --------------------------------- UI ----------------------------------- */
@@ -293,47 +307,88 @@ export default function SketchToApp() {
       // Save prompt for UsageFeed correlation
       if (prompt && prompt.trim()) pushPrompt(prompt);
 
-      const doPost = async () => {
+      const doPost = async (url: string) => {
         await ensureAuthToken();
         const form = new FormData();
         form.append("file", f);
-        form.append("prompt", prompt);
+        if (prompt && prompt.trim()) {
+          form.append("prompt", prompt);
+        }
 
-        const r = await fetch(apiUrl("/v1/files/upload"), {
+        const headers = makeHeaders(
+          prompt?.trim() ? { "X-Upload-Notes": prompt.trim() } : undefined
+        );
+
+        const r = await fetch(apiUrl(url), {
           method: "POST",
-          headers: makeHeaders(), // DO NOT set content-type here
+          headers, // DO NOT set content-type here
           body: form,
+          credentials: "omit",
+          mode: "cors",
         });
         return r;
       };
 
+      // Try a few compatible endpoints; first-success wins
+      const candidates = [
+        "/v1/files/upload",
+        "/api/files/upload",
+        "/files/upload",
+        "/api/upload/sketch", // compatibility alias
+      ];
+
       try {
-        let r = await doPost();
-
-        // If unauthorized, refresh token and retry once.
-        if (r.status === 401 || r.status === 403) {
-          await ensureAuthToken(true);
-          r = await doPost();
+        let resp: Response | null = null;
+        for (const path of candidates) {
+          try {
+            const r = await doPost(path);
+            // Prefer a JSON response
+            const ct = (r.headers.get("content-type") || "").toLowerCase();
+            if (!ct.includes("application/json")) {
+              // If not JSON and OK, still try to parse error text to surface detail
+              if (!r.ok) {
+                const t = await r.text();
+                throw new Error(`${r.status} ${r.statusText} | ${t.slice(0, 160)}`);
+              }
+              // Not JSON but OK — keep probing next (some endpoints may redirect)
+              continue;
+            }
+            resp = r;
+            // status check after we confirm JSON
+            break;
+          } catch {
+            // keep trying others
+          }
         }
 
-        const ct = r.headers.get("content-type") || "";
-        if (!ct.toLowerCase().includes("application/json")) {
-          const text = await r.text();
-          throw new Error(`Unexpected content-type: ${ct} | ${text.slice(0, 160)}`);
+        if (!resp) throw new Error("No compatible upload endpoint found");
+
+        // If unauthorized, refresh token and retry once against the same path we picked
+        if (resp.status === 401 || resp.status === 403) {
+          const retried = await doPost(new URL(resp.url).pathname);
+          resp = retried;
         }
 
-        const j: UploadResp = await r.json();
-        if (!r.ok || (j as any).error) {
+        const j: UploadResp = await resp.json();
+        if (!resp.ok || (j as any).error) {
           const msg = (j as any).error
             ? String((j as any).error)
-            : `${r.status} ${r.statusText}`;
+            : `${resp.status} ${resp.statusText}`;
           throw new Error(msg);
         }
 
-        const ok = j as Extract<UploadResp, { ok: true }>;
-        setJobId(ok.job_id);
-        setInfo("Uploaded. Processing…");
-        startPolling(ok.job_id);
+        // Normalize job id across variants
+        const picked = pickJobId(j, resp.headers);
+        const job_id = picked ?? (j as any).job_id ?? (j as any).jobId ?? null;
+
+        if (job_id) {
+          setJobId(job_id);
+          setInfo("Uploaded. Processing…");
+          startPolling(job_id);
+        } else {
+          // Successful upload without a job — surface result, but no polling
+          setInfo("Uploaded ✓ (no processing job returned by server)");
+        }
       } catch (e: any) {
         const msg = e?.message || "Upload failed";
         setError(msg);
@@ -425,8 +480,19 @@ export default function SketchToApp() {
 
   const canManualUpload = useMemo(() => !!file && !busy, [file, busy]);
 
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    // Submit upload on Ctrl/Cmd + Enter if a file is selected
+    // @ts-expect-error: nativeEvent may have isComposing
+    if (e.isComposing || e.nativeEvent?.isComposing) return;
+    const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
+    if (isEnter && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (file && !busy) void upload(file);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50" onKeyDown={onKeyDown}>
       <header className="border-b bg-white">
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="text-xl font-semibold tracking-tight">Cognomega</div>
@@ -434,7 +500,14 @@ export default function SketchToApp() {
       </header>
 
       <main className="max-w-4xl mx-auto p-6 space-y-6">
-        <div className={`${cardCls} p-6`}>
+        <div
+          className={`${cardCls} p-6`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDrop={onDrop}
+        >
           <div className="flex items-start justify-between gap-4">
             <h1 className="text-2xl font-semibold">Sketch → App</h1>
             {job?.status && (
@@ -456,14 +529,7 @@ export default function SketchToApp() {
           </div>
 
           {/* Dropzone + picker */}
-          <div
-            className="mt-6 grid gap-5"
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onDrop={onDrop}
-          >
+          <div className="mt-6 grid gap-5">
             <div>
               <label className="block text-sm font-medium mb-1">Sketch file</label>
               <input
@@ -473,7 +539,7 @@ export default function SketchToApp() {
                 className={inputCls}
               />
               <p className="mt-1 text-xs text-slate-500">
-                Drop a file anywhere on this card, or use the picker. Upload starts automatically.
+                Drop a file on this card, or use the picker. Upload starts automatically.
               </p>
             </div>
 
@@ -499,6 +565,7 @@ export default function SketchToApp() {
                     ? "bg-indigo-600 hover:bg-indigo-700"
                     : "bg-slate-400 cursor-not-allowed"
                 }`}
+                title="Upload selected file (Ctrl/Cmd + Enter)"
               >
                 {busy ? "Uploading…" : "Upload"}
               </button>

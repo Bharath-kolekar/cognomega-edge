@@ -1,9 +1,59 @@
-﻿@import "tailwindcss";
+﻿/* frontend/src/index.css */
 
-/* minimal base so it looks nice even before custom styles */
-html, body { height: 100%; }
-body {
-  background: #ffffff;
-  color: #111827;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans";
+/* Tailwind (v4 style import). If you're on Tailwind v3, keep the classic:
+   @tailwind base; @tailwind components; @tailwind utilities; */
+@import "tailwindcss";
+
+/* Minimal base so it looks nice even before custom styles. Wrap in @layer
+   so Tailwind doesn't purge these and to keep proper cascade order. */
+@layer base {
+  html, body { height: 100%; }
+
+  /* Prefer a clean, readable default UI stack */
+  body {
+    background: #ffffff;
+    color: #111827; /* slate-900 */
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Improve focus visibility for keyboard users */
+  :focus-visible {
+    outline: 2px solid #6366f1;   /* indigo-500 */
+    outline-offset: 2px;
+  }
+
+  /* Smooth scrolling for in-page anchors */
+  html { scroll-behavior: smooth; }
+
+  /* Selection color */
+  ::selection {
+    background: #e0e7ff; /* indigo-100 */
+    color: #111827;
+  }
+
+  a { color: #2563eb; }            /* blue-600 */
+  a:hover { color: #1d4ed8; }      /* blue-700 */
+
+  code, pre, kbd, samp {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+  }
+
+  /* Opt into a light color scheme explicitly (override if you add dark mode) */
+  :root { color-scheme: light; }
+}
+
+/* Optional small utility: a nicer container max-width for plain layouts
+   (Tailwind also offers container utilities; this is a lightweight fallback) */
+.container-narrow {
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  max-width: 980px;
 }

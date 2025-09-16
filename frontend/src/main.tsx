@@ -1,6 +1,7 @@
 ﻿// frontend/src/main.tsx
 import React from "react";
 import { createRoot } from "react-dom/client";
+import "./index.css"; // ensure global styles (Tailwind or base CSS) are applied
 
 import RouterGate from "./RouterGate";
 import { apiUrl, ensureApiBase } from "./lib/api/apiBase";
@@ -8,9 +9,10 @@ import { apiUrl, ensureApiBase } from "./lib/api/apiBase";
 /** ------------------------------------------------------------------------
  *  Minimal guest-auth bootstrap (waits before first render)
  *  - Persists under: cog_auth_jwt (JSON), jwt (string), guest_token (string)
- *  - Prefers POST /auth/guest
+ *  - Prefers POST /auth/guest (with JSON body)
  *  - Broadcasts a synthetic storage event so same-tab listeners refresh
  *  - Uses apiUrl() for endpoints (after ensureApiBase() discovery)
+ *  - Schedules auto-refresh ~60s before expiry (if provided)
  *  ---------------------------------------------------------------------- */
 
 const TOKEN_KEY  = "cog_auth_jwt"; // { token, exp }
@@ -19,8 +21,30 @@ const GUEST_KEY  = "guest_token";
 
 const AUTH_MAX_WAIT_MS = 8000;      // don't block initial paint forever
 const EXP_SKEW_SEC     = 60;        // refresh 60s before expiry
+const MIN_EXP_SEC      = 300;       // if expires_in looks too small, clamp to 5m
+const DEFAULT_TTL_SEC  = 3600;      // 1h default if server doesn't say
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+// refresh timer handle
+let refreshTimer: number | null = null;
+
+function clearRefreshTimer() {
+  if (refreshTimer != null) {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+function scheduleRefresh(expAbs: number | undefined) {
+  clearRefreshTimer();
+  if (!expAbs || !Number.isFinite(expAbs)) return;
+  const deltaMs = Math.max(5_000, (expAbs - EXP_SKEW_SEC - nowSec()) * 1000);
+  refreshTimer = window.setTimeout(() => {
+    // Force refresh regardless of current token state
+    void ensureGuest(true);
+  }, deltaMs) as unknown as number;
+}
 
 function broadcastStorage(key: string, newValue: string) {
   try {
@@ -43,6 +67,7 @@ function writeAll(token: string, exp?: number) {
     broadcastStorage(TOKEN_KEY, packed);
     broadcastStorage(LEGACY_KEY, token);
     broadcastStorage(GUEST_KEY, token);
+    scheduleRefresh(exp);
   } catch {
     /* ignore */
   }
@@ -61,53 +86,84 @@ function readPacked(): { token: string; exp?: number } | null {
   return null;
 }
 
-async function tryPostGuest(): Promise<{ token: string; exp?: number } | null> {
+type GuestResp = { token?: string; jwt?: string; guest_token?: string; access_token?: string; exp?: number; expires_in?: number; expires_at?: number } | string;
+
+function extractToken(resp: GuestResp): { token: string; exp?: number } | null {
   try {
-    const r = await fetch(apiUrl("/auth/guest"), {
-      method: "POST",
-      headers: { Accept: "application/json" },
-      body: "{}", // harmless body helps some proxies treat this as JSON
-    });
-    if (!r.ok) return null;
-    const ct = r.headers.get("content-type") || "";
-    const j: any = ct.includes("application/json") ? await r.json() : await r.text();
+    if (!resp) return null;
     const token =
-      (typeof j === "string" ? j : j?.token || j?.jwt || j?.access_token) || null;
-    const exp =
-      typeof j === "object"
-        ? Number(j?.exp ?? (j?.expires_in ? nowSec() + Number(j.expires_in) : undefined))
-        : undefined;
-    return token ? { token, exp } : null;
+      typeof resp === "string"
+        ? resp
+        : resp.token || resp.jwt || resp.guest_token || resp.access_token || "";
+
+    if (!token || typeof token !== "string") return null;
+
+    const now = nowSec();
+    const expAbs = typeof resp === "string" ? undefined : Number(resp.exp ?? resp.expires_at);
+    const expRel = typeof resp === "string" ? undefined : Number(resp.expires_in);
+
+    let exp: number | undefined = undefined;
+    if (Number.isFinite(expAbs) && (expAbs as number) > now) {
+      exp = expAbs as number;
+    } else if (Number.isFinite(expRel) && (expRel as number) > 0) {
+      const ttl = Math.max(MIN_EXP_SEC, expRel as number);
+      exp = now + ttl;
+    } else {
+      exp = now + DEFAULT_TTL_SEC;
+    }
+
+    return { token, exp };
   } catch {
     return null;
   }
 }
 
-async function tryGetFallback(path: string): Promise<{ token: string; exp?: number } | null> {
+async function tryPostGuest(): Promise<{ token: string; exp?: number } | null> {
   try {
-    const r = await fetch(apiUrl(path), { headers: { Accept: "application/json" } });
+    const r = await fetch(apiUrl("/auth/guest"), {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: "{}", // harmless body helps some proxies treat this as JSON
+      credentials: "omit",
+      mode: "cors",
+    });
     if (!r.ok) return null;
-    const ct = r.headers.get("content-type") || "";
-    const j: any = ct.includes("application/json") ? await r.json() : await r.text();
-    const token =
-      (typeof j === "string" ? j : j?.token || j?.jwt || j?.access_token) || null;
-    const exp = typeof j === "object" ? Number(j?.exp) : undefined;
-    return token ? { token, exp } : null;
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    const j: GuestResp = ct.includes("application/json") ? await r.json() : await r.text();
+    const parsed = extractToken(j);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function tryPostGuestV1(): Promise<{ token: string; exp?: number } | null> {
+  try {
+    const r = await fetch(apiUrl("/api/v1/auth/guest"), {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: "{}",
+      credentials: "omit",
+      mode: "cors",
+    });
+    if (!r.ok) return null;
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    const j: GuestResp = ct.includes("application/json") ? await r.json() : await r.text();
+    const parsed = extractToken(j);
+    return parsed;
   } catch {
     return null;
   }
 }
 
 async function fetchGuestToken(): Promise<{ token: string; exp?: number } | null> {
-  // Prefer POST /auth/guest (modern), then fall back to legacy generators
+  // Prefer POST /auth/guest (modern), then fall back to /api/v1/auth/guest
   const first = await tryPostGuest();
   if (first) return first;
 
-  const fallbacks: string[] = [];
-  for (const p of fallbacks) {
-    const got = await tryGetFallback(p);
-    if (got) return got;
-  }
+  const second = await tryPostGuestV1();
+  if (second) return second;
+
   return null;
 }
 
@@ -126,7 +182,7 @@ async function ensureGuest(force = false): Promise<string | null> {
     }
     const fresh = await fetchGuestToken();
     if (fresh?.token) {
-      writeAll(fresh.token, fresh.exp || nowSec() + 3600);
+      writeAll(fresh.token, fresh.exp || nowSec() + DEFAULT_TTL_SEC);
       return fresh.token;
     }
     return null;
@@ -156,7 +212,7 @@ async function mount() {
   if (!rootEl) throw new Error("Missing #root element");
   rootEl.textContent = "Initializing…";
 
-  // 0) Discover API base (writes to localStorage if needed)
+  // 0) Discover API base (writes to global alias via ensureApiBase)
   try {
     await ensureApiBase();
   } catch {
@@ -171,6 +227,16 @@ async function mount() {
   } catch {
     // even if auth failed, proceed to render; components can handle unauth state
   }
+
+  // Refresh token when tab becomes visible (if near or past skew)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const packed = readPacked();
+    const exp = Number(packed?.exp ?? 0);
+    if (!packed?.token || (exp && exp - EXP_SKEW_SEC <= nowSec())) {
+      void ensureGuest(true);
+    }
+  });
 
   createRoot(rootEl).render(
     <React.StrictMode>
