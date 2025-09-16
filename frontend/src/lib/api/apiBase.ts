@@ -1,3 +1,4 @@
+// frontend/src/lib/api/apiBase.ts
 /** apiBase.ts — Cross-origin canonical (production-grade)
  * - Always uses absolute API base (VITE_API_BASE or https://api.cognomega.com)
  * - Deterministic endpoints (no probing, no dev-relative fallbacks)
@@ -17,18 +18,24 @@ export type ApiEndpoints = {
 /* ---------------------------------- Base URL --------------------------------- */
 
 function readEnvBase(): string {
+  // Prefer Vite env (baked at build time)
   try {
-    const vite = (typeof import.meta !== "undefined" && (import.meta as any)?.env?.VITE_API_BASE)
-      ? String((import.meta as any).env.VITE_API_BASE).trim()
-      : "";
-    if (vite) return vite;
+    const viteVal =
+      (typeof import.meta !== "undefined" && (import.meta as any)?.env?.VITE_API_BASE)
+        ? String((import.meta as any).env.VITE_API_BASE).trim()
+        : "";
+    if (viteVal) return viteVal;
   } catch {}
+
+  // Safe Node-style read without referencing 'process' name (prevents TS "Cannot find name 'process'")
   try {
-    const node = (typeof process !== "undefined" && (process as any)?.env?.VITE_API_BASE)
-      ? String((process as any).env.VITE_API_BASE).trim()
+    const g: any = typeof globalThis !== "undefined" ? (globalThis as any) : {};
+    const nodeVal = g?.process?.env?.VITE_API_BASE
+      ? String(g.process.env.VITE_API_BASE).trim()
       : "";
-    if (node) return node;
+    if (nodeVal) return nodeVal;
   } catch {}
+
   return "https://api.cognomega.com";
 }
 

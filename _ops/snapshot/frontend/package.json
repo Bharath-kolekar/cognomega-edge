@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vite --port 5174 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --strictPort --port 5174",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "preview": "vite preview --strictPort --port 5174"
   },
   "dependencies": {
     "@mlc-ai/web-llm": "^0.2.47",
@@ -18,15 +17,13 @@
   "devDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.50.1",
     "@tailwindcss/postcss": "^4.1.13",
-    "@types/react": "^19.1.13",
-    "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.21",
     "esbuild": "~0.21.5",
     "postcss": "^8.5.6",
     "rollup": "^4.50.1",
     "tailwindcss": "^4.1.13",
-    "typescript": "^5.9.2",
+    "typescript": "^5.6.2",
     "vite": "^5.4.8"
   },
   "packageManager": "pnpm@10.15.1"

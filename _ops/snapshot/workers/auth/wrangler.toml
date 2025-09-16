@@ -1,0 +1,48 @@
+name = "cognomega-auth"
+main = "src/index.ts"
+compatibility_date = "2025-09-03"
+compatibility_flags = ["nodejs_compat"]
+
+# Prod-only: this is a zoned Worker, not *.workers.dev
+workers_dev = false
+
+# Own the API subdomain
+routes = [
+  { pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }
+]
+
+[vars]
+# --- Production defaults ---
+CREDIT_PER_1K   = "0.05"  # credits per 1k tokens (input+output)
+ALLOWED_ORIGINS = "https://app.cognomega.com"  # lock down CORS for prod
+JWT_TTL_SEC     = "3600"
+ISSUER          = "https://api.cognomega.com"
+KID             = "k1"
+PREFERRED_PROVIDER = "groq,cfai,openai"
+
+# Models
+GROQ_MODEL   = "llama-3.1-8b-instant"
+CF_AI_MODEL  = "@cf/meta/llama-3.1-8b-instruct"
+OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_BASE  = "https://api.openai.com/v1"
+# Optional:
+# GROQ_BASE        = "https://api.groq.com/openai/v1"
+# MAX_UPLOAD_BYTES = "10485760" # 10MB
+
+# Workers AI binding
+[ai]
+binding = "AI"
+
+# KV namespaces
+[[kv_namespaces]]
+binding = "KEYS"         # public JWKS (key: "jwks")
+id = "7e9d002852ba44849900a2babfcaf816"
+
+[[kv_namespaces]]
+binding = "KV_BILLING"   # credits + usage + jobs
+id = "5da314a8b48b4db684678ab5ad074563"
+
+# R2 bucket for direct uploads
+[[r2_buckets]]
+binding = "R2_UPLOADS"
+bucket_name = "cognomega-uploads"

@@ -1,0 +1,359 @@
+openapi: 3.1.0
+info:
+  title: Cognomega Super-Intelligence API
+  version: 1.0.0
+  description: |
+    Contract for the Super-Intelligence endpoint used by Ask Console and App Maker.
+    Supports non-stream JSON responses and optional SSE streaming.
+
+servers:
+  - url: https://api.cognomega.com
+    description: Production
+  - url: https://staging.api.cognomega.com
+    description: Staging (optional)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/si/ask:
+    post:
+      summary: Execute a Super-Intelligence skill
+      operationId: siAsk
+      description: |
+        Executes a skill (e.g., summarize, codegen).  
+        Returns a normal JSON response or may stream via Server-Sent Events (SSE) when `Accept: text/event-stream` is sent.
+      parameters:
+        - name: X-Intelligence-Tier
+          in: header
+          required: false
+          description: Intelligence routing tier.
+          schema: { $ref: '#/components/schemas/Tier' }
+        - name: X-AB-Variant
+          in: header
+          required: false
+          description: A/B test arm.
+          schema:
+            type: string
+            enum: [A, B]
+        - name: X-Client-Id
+          in: header
+          required: false
+          description: Sticky client identifier (UUID or random).
+          schema: { type: string }
+        - name: X-Client-TS
+          in: header
+          required: false
+          description: Client-side epoch millis timestamp as string.
+          schema: { type: string, pattern: '^[0-9]+$' }
+        - name: X-Project-Name
+          in: header
+          required: false
+          schema: { type: string }
+        - name: X-Project-Pages
+          in: header
+          required: false
+          schema: { type: string }
+        - name: X-Skills
+          in: header
+          required: false
+          description: Comma-separated feature toggles.
+          schema: { type: string }
+        - name: X-Experiment
+          in: header
+          required: false
+          description: Human-readable experiment tag.
+          schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: |
+            Optional idempotency key to deduplicate retried requests (recommended TTL: 24h).
+          schema: { type: string, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+            examples:
+              summarize:
+                value:
+                  skill: summarize
+                  input: "Summarize Cognomega’s value prop in 3 bullets."
+                  telemetry: { tier: advanced, ab: A, source: ask_console, page: App.tsx }
+              codegen:
+                value:
+                  skill: codegen
+                  input:
+                    spec: "React table with pagination and search"
+                    language: ts
+                    framework: react
+                  telemetry: { tier: super, ab: B, source: builder, page: LaunchInBuilder }
+              refactor:
+                value:
+                  skill: refactor
+                  input:
+                    code: "function foo(a,b){return a+b}"
+                    goals: ["convert to TS", "add types"]
+              vision-analyze:
+                value:
+                  skill: vision-analyze
+                  input: { prompt: "Describe the screenshot and extract action items" }
+                  attachments:
+                    - storage: r2
+                      key: "uploads/ui/screen1.png"
+                      role: image
+                      content_type: "image/png"
+      responses:
+        '200':
+          description: Successful JSON completion
+          headers:
+            X-Credits-Used:
+              description: Credits consumed by the request.
+              schema: { type: number }
+            X-Credits-Balance:
+              description: Remaining credits.
+              schema: { type: number }
+            X-Model:
+              description: Model or route used.
+              schema: { type: string }
+            X-Cache:
+              description: Optional cache signal.
+              schema: { type: string, enum: [HIT, MISS] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AskResponse' }
+              examples:
+                ok:
+                  value:
+                    ok: true
+                    result:
+                      content: "- Faster builds\n- Lower latency\n- Better iteration speed"
+                      meta:
+                        model: "gpt-4o@openai"
+                        latency_ms: 532
+                        tokens_in: 1234
+                        tokens_out: 456
+                        attachments_used: []
+                        skill: summarize
+                        tier: super
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429':
+          description: Rate limited
+          headers:
+            Retry-After:
+              description: Seconds until the client should retry.
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+      callbacks:
+        sse:
+          '{$request.header.Accept} == text/event-stream':
+            /api/si/ask:
+              post:
+                description: |
+                  When Accept is `text/event-stream`, server may stream SSE events.
+                  Each event is `event: message` with `data: {"delta": "...", "index": n}` and a final `event: done`.
+                responses:
+                  '200':
+                    description: SSE stream
+                    content:
+                      text/event-stream:
+                        schema:
+                          type: string
+                          description: |
+                            Stream of SSE events. Example:
+                            ```
+                            :keep-alive
+                            
+                            event: message
+                            data: {"delta":"partial text","index":0}
+
+                            event: message
+                            data: {"delta":" more text","index":1}
+
+                            event: done
+                            data: {"finish_reason":"stop","meta":{"latency_ms":532,"tokens_out":456}}
+                            ```
+                        examples:
+                          stream:
+                            value: |
+                              :keep-alive
+
+                              event: message
+                              data: {"delta":"Hello","index":0}
+
+                              event: done
+                              data: {"finish_reason":"stop"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Tier:
+      type: string
+      enum: [human, advanced, super]
+
+    Skill:
+      type: string
+      enum:
+        - summarize
+        - codegen
+        - refactor
+        - testgen
+        - explain
+        - plan
+        - api-design
+        - sql
+        - data-viz
+        - translate
+        - vision-analyze
+
+    Attachment:
+      type: object
+      additionalProperties: false
+      properties:
+        storage:
+          type: string
+          enum: [r2]
+        key:
+          type: string
+          description: Object key/path in storage.
+          maxLength: 2048
+        role:
+          type: string
+          enum: [context, input, image]
+        content_type:
+          type: string
+      required: [storage, key, role]
+
+    Telemetry:
+      type: object
+      additionalProperties: true
+      properties:
+        tier: { $ref: '#/components/schemas/Tier' }
+        ab:
+          type: string
+          enum: [A, B]
+        client_id: { type: string }
+        client_ts:
+          type: string
+          description: Epoch millis as string.
+          pattern: '^[0-9]+$'
+        source:
+          type: string
+          enum: [ask_console, builder]
+        page:
+          type: string
+        skills_enabled:
+          type: array
+          items: { type: string }
+        api_base:
+          type: string
+          format: uri
+        user_email:
+          type: string
+          format: email
+        stream_hint:
+          type: string
+          enum: [sse, off]
+
+    AskRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        skill: { $ref: '#/components/schemas/Skill' }
+        input:
+          description: Free-form user input or structured payload per skill.
+        system:
+          type: string
+          description: Optional system prompt.
+          maxLength: 10000
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/Attachment' }
+          maxItems: 16
+        telemetry: { $ref: '#/components/schemas/Telemetry' }
+      required: [skill, input]
+
+    AskResultMeta:
+      type: object
+      additionalProperties: true
+      properties:
+        model: { type: string }
+        latency_ms: { type: integer }
+        tokens_in: { type: integer }
+        tokens_out: { type: integer }
+        attachments_used:
+          type: array
+          items: { type: string }
+        skill: { $ref: '#/components/schemas/Skill' }
+        tier: { $ref: '#/components/schemas/Tier' }
+
+    AskResult:
+      type: object
+      additionalProperties: true
+      properties:
+        content:
+          description: Final answer text/markdown or structured content.
+        meta:
+          $ref: '#/components/schemas/AskResultMeta'
+      required: [content]
+
+    AskResponse:
+      type: object
+      oneOf:
+        - $ref: '#/components/schemas/AskResponseOK'
+        - $ref: '#/components/schemas/ErrorResponse'
+
+    AskResponseOK:
+      type: object
+      additionalProperties: false
+      properties:
+        ok: { type: boolean, const: true }
+        result: { $ref: '#/components/schemas/AskResult' }
+      required: [ok, result]
+
+    ErrorObject:
+      type: object
+      additionalProperties: true
+      properties:
+        code:
+          type: string
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, RATE_LIMIT, INTERNAL]
+        message:
+          type: string
+        details:
+          description: Optional machine-readable details.
+      required: [code, message]
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        ok: { type: boolean, const: false }
+        error: { $ref: '#/components/schemas/ErrorObject' }
+      required: [ok, error]

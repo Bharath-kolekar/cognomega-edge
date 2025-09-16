@@ -1,17 +1,10 @@
-﻿import { defineConfig, splitVendorChunkPlugin } from "vite";
+﻿import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// --- Dev proxy target (unchanged) ---
 const target = "https://api.cognomega.com";
 
 export default defineConfig({
-  plugins: [
-    react(),
-    // Helps split common vendor chunks automatically
-    splitVendorChunkPlugin(),
-  ],
-
-  // ---- Development server: keep your existing proxies intact ----
+  plugins: [react()],
   server: {
     port: 5173,
     strictPort: true,
@@ -46,40 +39,6 @@ export default defineConfig({
       "/auth":    { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
       "/billing": { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" }
     }
-  },
-
-  // ---- Production build: split heavy libs into separate chunks ----
-  build: {
-    target: "es2020",
-    sourcemap: false,
-    chunkSizeWarningLimit: 3000,
-    rollupOptions: {
-      output: {
-        // Stricter, explicit chunking + robust fallbacks
-        manualChunks(id) {
-          // Keep @mlc-ai/web-llm totally isolated (large payload)
-          if (id.includes("@mlc-ai/web-llm")) return "mlc-llm";
-
-          // Cross-platform react/react-dom matcher (posix + win paths)
-          if (
-            id.includes("/react/") ||
-            id.includes("\\react\\") ||
-            /react(?:-dom)?[\\/]/.test(id)
-          ) {
-            return "react";
-          }
-
-          // Everything else in node_modules → vendor
-          if (id.includes("node_modules")) return "vendor";
-
-          // otherwise, let Vite/Rollup decide (app code)
-        },
-      },
-    },
-  },
-
-  // Avoid prebundling web-llm during dev (keeps dev fast and ensures true code-split)
-  optimizeDeps: {
-    exclude: ["@mlc-ai/web-llm"],
-  },
+  }
 });
+
