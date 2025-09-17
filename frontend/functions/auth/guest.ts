@@ -1,43 +1,47 @@
-// frontend/functions/auth/guest.ts
 // Pages Function: verify Turnstile, then proxy to API /auth/guest to mint the JWT.
+// Type-annotation-free to avoid CI/type issues.
 
 type Json = Record<string, unknown>;
 
-export const onRequestOptions: PagesFunction = async ({ request }) => {
-  return new Response(null, { status: 204, headers: corsHeaders(request.headers.get("Origin")) });
-};
-
-export const onRequestPost: PagesFunction = async ({ request, env }) => {
+export const onRequest = async (ctx: any): Promise<Response> => {
+  const { request, env } = ctx;
   const origin = request.headers.get("Origin");
   const CORS = corsHeaders(origin);
 
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS });
+  }
+  if (request.method !== "POST") {
+    return json({ error: "method_not_allowed" }, 405, CORS);
+  }
+
   try {
-    // Accept either header or form-body token (compat with Turnstile widget)
+    // Accept either header or form-body token (Turnstile can send both patterns)
     let token = request.headers.get("CF-Turnstile-Token") ?? "";
     if (!token) {
       try {
         const fd = await request.clone().formData();
         token = String(fd.get("cf-turnstile-response") ?? "");
       } catch {
-        /* ignore – not form-data */
+        /* not form-data; ignore */
       }
     }
     if (!token) return json({ error: "missing_turnstile" }, 400, CORS);
 
-    // Verify Turnstile
+    // Verify with Cloudflare
     const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
       method: "POST",
       body: new URLSearchParams({
-        secret: env.TURNSTILE_SECRET, // server-side secret (Pages project)
+        secret: env.TURNSTILE_SECRET,
         response: token,
       }),
     });
-    const verify = await verifyRes.json() as Json & { success?: boolean; ["error-codes"]?: string[] };
+    const verify = (await verifyRes.json()) as { success?: boolean; ["error-codes"]?: string[] };
     if (!verify?.success) {
       return json({ error: "turnstile_failed", code: verify["error-codes"] ?? null }, 403, CORS);
     }
 
-    // Forward to API to mint the guest JWT
+    // Proxy to API to mint the guest JWT
     const apiBase = (env.VITE_API_BASE || "https://api.cognomega.com").replace(/\/+$/, "");
     const upstream = await fetch(`${apiBase}/auth/guest`, {
       method: "POST",
@@ -65,7 +69,7 @@ export const onRequestPost: PagesFunction = async ({ request, env }) => {
         },
       }
     );
-  } catch (err) {
+  } catch {
     return json({ error: "server_error" }, 500, CORS);
   }
 };
