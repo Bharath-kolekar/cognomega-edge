@@ -1,10 +1,19 @@
-// Pages Function: verify Turnstile, then proxy to API /auth/guest to mint the JWT.
-// Type-annotation-free to avoid CI/type issues.
+// Pages Function: verify Turnstile, then call API /auth/guest to mint a JWT.
+// No `any` usage to satisfy strict ESLint/TS.
+
+type Env = {
+  TURNSTILE_SECRET: string;
+  VITE_API_BASE?: string;
+};
+
+type Ctx = {
+  request: Request;
+  env: Env;
+};
 
 type Json = Record<string, unknown>;
 
-export const onRequest = async (ctx: any): Promise<Response> => {
-  const { request, env } = ctx;
+export const onRequest = async ({ request, env }: Ctx): Promise<Response> => {
   const origin = request.headers.get("Origin");
   const CORS = corsHeaders(origin);
 
@@ -16,12 +25,13 @@ export const onRequest = async (ctx: any): Promise<Response> => {
   }
 
   try {
-    // Accept either header or form-body token (Turnstile can send both patterns)
+    // Token can arrive via header or form-data field (cf-turnstile-response).
     let token = request.headers.get("CF-Turnstile-Token") ?? "";
     if (!token) {
       try {
         const fd = await request.clone().formData();
-        token = String(fd.get("cf-turnstile-response") ?? "");
+        const v = fd.get("cf-turnstile-response");
+        if (typeof v === "string") token = v;
       } catch {
         /* not form-data; ignore */
       }
@@ -29,31 +39,50 @@ export const onRequest = async (ctx: any): Promise<Response> => {
     if (!token) return json({ error: "missing_turnstile" }, 400, CORS);
 
     // Verify with Cloudflare
-    const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      body: new URLSearchParams({
-        secret: env.TURNSTILE_SECRET,
-        response: token,
-      }),
-    });
-    const verify = (await verifyRes.json()) as { success?: boolean; ["error-codes"]?: string[] };
+    const verifyRes = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        body: new URLSearchParams({
+          secret: env.TURNSTILE_SECRET,
+          response: token,
+        }),
+      }
+    );
+    const verify = (await verifyRes.json()) as {
+      success?: boolean;
+      ["error-codes"]?: string[];
+    };
     if (!verify?.success) {
-      return json({ error: "turnstile_failed", code: verify["error-codes"] ?? null }, 403, CORS);
+      return json(
+        { error: "turnstile_failed", code: verify["error-codes"] ?? null },
+        403,
+        CORS
+      );
     }
 
-    // Proxy to API to mint the guest JWT
-    const apiBase = (env.VITE_API_BASE || "https://api.cognomega.com").replace(/\/+$/, "");
+    // Proxy to API to mint JWT
+    const apiBase = (env.VITE_API_BASE || "https://api.cognomega.com").replace(
+      /\/+$/,
+      ""
+    );
     const upstream = await fetch(`${apiBase}/auth/guest`, {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
       body: "{}", // API expects POST {}
     });
 
     const ct = (upstream.headers.get("content-type") || "").toLowerCase();
-    const body = ct.includes("application/json") ? await upstream.json() : await upstream.text();
+    const body = ct.includes("application/json")
+      ? await upstream.json()
+      : await upstream.text();
 
     if (!upstream.ok) {
-      const msg = typeof body === "string" ? body : (body as any)?.error || `Upstream ${upstream.status}`;
+      const msg =
+        typeof body === "string" ? body : (body as Json)["error"] ?? upstream.statusText;
       return json({ error: String(msg) }, upstream.status, CORS);
     }
 
@@ -83,7 +112,7 @@ function corsHeaders(origin: string | null) {
     "access-control-allow-origin": allow,
     "access-control-allow-methods": "POST, OPTIONS",
     "access-control-allow-headers": "CF-Turnstile-Token, Content-Type, Accept",
-    "vary": "Origin",
+    vary: "Origin",
   };
 }
 
