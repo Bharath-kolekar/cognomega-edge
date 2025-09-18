@@ -1,4 +1,3 @@
-// frontend/functions/auth/guest.ts
 /* eslint-env worker */
 /// <reference types="@cloudflare/workers-types" />
 import type { PagesFunction } from '@cloudflare/workers-types';
@@ -15,15 +14,18 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   const origin = request.headers.get('Origin');
   const CORS = corsHeaders(origin);
 
+  // CORS preflight
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS });
   }
+
+  // Only POST is allowed
   if (request.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405, CORS);
   }
 
   try {
-    // Turnstile token from header or form-data
+    // Get Turnstile token from header or form-data
     let token = request.headers.get('CF-Turnstile-Token') ?? '';
     if (!token) {
       try {
@@ -36,7 +38,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     }
     if (!token) return json({ error: 'missing_turnstile' }, 400, CORS);
 
-    // Verify Turnstile
+    // Verify Turnstile with Cloudflare
     const verifyRes = await fetch(
       'https://challenges.cloudflare.com/turnstile/v0/siteverify',
       {
