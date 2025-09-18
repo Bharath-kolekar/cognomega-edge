@@ -1,5 +1,6 @@
 ﻿// frontend/src/main.tsx
-import "./lib/turnstile";
+import { getTurnstileToken } from "./lib/turnstile";
+
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css"; // ensure global styles (Tailwind or base CSS) are applied
@@ -258,3 +259,14 @@ mount();
   s.crossOrigin = 'anonymous';
   document.head.appendChild(s);
 })();
+
+// Make a helper available to the app & DevTools
+declare global {
+  interface Window {
+    __cogGetTurnstileToken?: () => Promise<string>;
+  }
+}
+window.__cogGetTurnstileToken = () =>
+  getTurnstileToken({
+    sitekey: (import.meta as any).env.VITE_TURNSTILE_SITE_KEY as string,
+  });
