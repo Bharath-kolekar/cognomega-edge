@@ -14,7 +14,7 @@ let _eps: ApiEndpoints | null = null;
 export type ApiEndpoints = {
   ready: string;       // /ready (matches Worker)
   guestAuth: string;   // /auth/guest
-  credits: string;     // /api/credits
+  credits: string;     // /api/billing/balance
   usage: string;       // /api/billing/usage
 };
 
@@ -148,9 +148,10 @@ export async function fetchJson<T = any>(
 ): Promise<FetchJsonResult<T>> {
   const url = apiUrl(path);
   const mergedHeaders = new Headers(authHeaders(init.headers || {}));
-  // Belt-and-suspenders: strip X-Requested-With in any casing
+  // Belt-and-suspenders: strip problematic headers on the wire
   mergedHeaders.delete("X-Requested-With");
   mergedHeaders.delete("x-requested-with");
+  mergedHeaders.delete("x-user-email");
 
   const r = await fetch(url, {
     credentials: init.credentials ?? "omit",
@@ -236,14 +237,15 @@ export function readUserEmail(): string | null {
 
 /** Merge provided headers with auth defaults (Accept + Authorization)
  * Returns a POJO (not a Headers object) for wide compatibility.
- * NOTE: We intentionally DO NOT set X-Requested-With (it breaks CORS preflight).
+ * NOTE: We intentionally DO NOT send X-Requested-With or custom identity headers.
  */
 export function authHeaders(init: HeadersInit = {}): HeadersInit {
   const h = new Headers(init as any);
 
-  // Never send X-Requested-With (strip any casing if present)
+  // Never send noisy/custom headers that trigger preflights
   h.delete("X-Requested-With");
   h.delete("x-requested-with");
+  h.delete("x-user-email");
 
   if (!h.has("Accept")) h.set("Accept", "application/json");
 
