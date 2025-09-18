@@ -247,3 +247,14 @@ async function mount() {
 }
 
 mount();
+
+// Preload Turnstile once (idempotent for HMR)
+(() => {
+  if (document.getElementById('cf-turnstile-preload')) return;
+  const s = document.createElement('script');
+  s.id = 'cf-turnstile-preload';
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+  s.async = s.defer = true;
+  s.crossOrigin = 'anonymous';
+  document.head.appendChild(s);
+})();
