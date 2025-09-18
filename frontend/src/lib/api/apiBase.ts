@@ -97,7 +97,7 @@ export async function ensureApiEndpoints(): Promise<ApiEndpoints> {
   const endpoints: ApiEndpoints = {
     ready:     apiUrl("/ready"),
     guestAuth: apiUrl("/auth/guest"),
-    credits:   apiUrl("/api/credits"),
+    credits:   apiUrl("/api/billing/balance"),
     usage:     apiUrl("/api/billing/usage"),
   };
 
@@ -148,6 +148,9 @@ export async function fetchJson<T = any>(
 ): Promise<FetchJsonResult<T>> {
   const url = apiUrl(path);
   const mergedHeaders = new Headers(authHeaders(init.headers || {}));
+  // Belt-and-suspenders: strip X-Requested-With in any casing
+  mergedHeaders.delete("X-Requested-With");
+  mergedHeaders.delete("x-requested-with");
 
   const r = await fetch(url, {
     credentials: init.credentials ?? "omit",
@@ -158,7 +161,6 @@ export async function fetchJson<T = any>(
 
   const ct = (r.headers.get("content-type") || "").toLowerCase();
   const isJson = ct.includes("application/json");
-
   const data = isJson ? await safeJson(r) : await r.text().then((t) => (t || null));
 
   return { ok: r.ok, status: r.status, data: data as any, headers: r.headers };
@@ -227,21 +229,23 @@ export function readUserEmail(): string | null {
   const p = decodeJwtPayload(tok);
   const candidate = (p?.email ?? p?.em ?? p?.sub ?? null) as string | null;
   if (candidate && typeof candidate === "string") {
-    // Light validation: contains "@"
     if (candidate.includes("@")) return candidate;
-    // If sub is not an email, ignore
   }
   return null;
 }
 
-/** Merge provided headers with auth defaults (Accept + Authorization + diagnostics)
+/** Merge provided headers with auth defaults (Accept + Authorization)
  * Returns a POJO (not a Headers object) for wide compatibility.
+ * NOTE: We intentionally DO NOT set X-Requested-With (it breaks CORS preflight).
  */
 export function authHeaders(init: HeadersInit = {}): HeadersInit {
   const h = new Headers(init as any);
+
+  // Never send X-Requested-With (strip any casing if present)
+  h.delete("X-Requested-With");
+  h.delete("x-requested-with");
+
   if (!h.has("Accept")) h.set("Accept", "application/json");
-  // Helpful default for CORS diagnostics/tools
-  if (!h.has("X-Requested-With")) h.set("X-Requested-With", "XMLHttpRequest");
 
   try {
     const packed =
