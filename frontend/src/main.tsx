@@ -1,5 +1,7 @@
 ﻿// frontend/src/main.tsx
-import { getTurnstileToken } from "./lib/turnstile";
+import "./lib/turnstile";            // side-effect: defines window.__cogGetTurnstileToken
+import { getTurnstileToken } from "./lib/turnstile"; // used by callers
+
 
 import React from "react";
 import { createRoot } from "react-dom/client";
