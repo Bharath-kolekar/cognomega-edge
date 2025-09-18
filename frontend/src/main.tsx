@@ -1,4 +1,5 @@
 ﻿// frontend/src/main.tsx
+import "./lib/turnstile";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css"; // ensure global styles (Tailwind or base CSS) are applied
