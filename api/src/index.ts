@@ -68,7 +68,7 @@ const app = new Hono<Ctx>();
 // Allow your prod & preview origins + local dev
 const allowedOrigins = [
   "https://app.cognomega.com",
-  "https://cognomega-frontend.pages.dev",                // stable Pages domain
+  "https://cognomega-frontend.pages.dev", // stable Pages domain
   /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/, // preview hashes
   "https://www.cognomega.com",
   "https://cognomega.com",
@@ -84,19 +84,20 @@ app.use(
   "*",
   cors({
     origin: (origin) => (isAllowed(origin) ? origin! : ""), // empty => no ACAO header
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: [
-      "authorization",
-      "content-type",
-      "cf-turnstile-token",
-      "x-user-email",
+      "Authorization",
+      "Content-Type",
+      "X-Requested-With",     // <-- added
+      "CF-Turnstile-Token",
+      "X-User-Email",
     ],
     exposeHeaders: [
-      "content-type",
-      "content-disposition",
-      "x-credits-used",
-      "x-credits-balance",
-      "x-request-id",
+      "Content-Type",
+      "Content-Disposition",
+      "X-Credits-Used",
+      "X-Credits-Balance",
+      "X-Request-Id",
     ],
     maxAge: 86400,
     credentials: false, // we use Authorization header, not cookies
@@ -109,8 +110,12 @@ app.options("*", (c) => {
   const acrh = c.req.header("Access-Control-Request-Headers") || "";
   const headers = new Headers();
   headers.set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
-  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  headers.set("Access-Control-Allow-Headers", acrh || "authorization,content-type,cf-turnstile-token,x-user-email");
+  headers.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
+  // Mirror what the browser asked for; fallback includes X-Requested-With
+  headers.set(
+    "Access-Control-Allow-Headers",
+    acrh || "Authorization,Content-Type,X-Requested-With,CF-Turnstile-Token,X-User-Email"
+  );
   headers.set("Access-Control-Max-Age", "86400");
   if (isAllowed(origin)) headers.set("Access-Control-Allow-Origin", origin);
   // 204 = no body
@@ -328,6 +333,10 @@ function creditsForTokens(tokensIn: number, tokensOut: number) {
 app.get("/healthz", (c) => c.json({ ok: true, when: nowIso() }));
 app.get("/api/v1/healthz", (c) => c.json({ ok: true, when: nowIso() })); // alias
 
+// extra health aliases (for older UI calls)
+app.get("/health", (c) => c.json({ ok: true, when: nowIso() }));
+app.get("/api/health", (c) => c.json({ ok: true, when: nowIso() }));
+
 app.get("/ready", (c) => {
   const provider = c.env.LLM_PROVIDER || "groq";
   const model = c.env.LLM_MODEL || defaultModel(provider);
@@ -455,6 +464,16 @@ app.get("/api/billing/balance", async (c) => {
   return c.json({ balance: bal, warn_credits: WARN_CREDITS });
 });
 
+// alias: older UI calls /api/credits
+app.get("/api/credits", async (c) => {
+  const email = c.req.header("x-user-email") || c.req.query("email") || "anon@cognomega.local";
+  const sql = sqlFor(c);
+  await ensureSchema(c, sql);
+  const uid = await ensureUserByEmail(sql, email);
+  const bal = await getBalance(sql, uid);
+  return c.json({ balance: bal, warn_credits: WARN_CREDITS });
+});
+
 app.get("/api/billing/usage", async (c) => {
   const email = c.req.header("x-user-email") || c.req.query("email") || "anon@cognomega.local";
   const sql = sqlFor(c);
@@ -476,6 +495,12 @@ app.get("/api/billing/usage", async (c) => {
   `;
   return c.json({ events: rows });
 });
+
+// aliases for usage (older UI variations)
+app.get("/api/v1/billing/usage", (c) => app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as any, c.executionCtx as any));
+app.get("/billing/usage", (c) => app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any));
+app.get("/api/usage", (c) => app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any));
+app.get("/usage", (c) => app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any));
 
 // -------- SI skills (with queue path) --------
 app.post("/api/si/ask", async (c) => {
