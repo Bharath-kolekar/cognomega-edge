@@ -2,12 +2,12 @@
 //
 // Client-side guest-auth helper used by the app.
 // - No hard-coded domains: builds URLs via apiUrl()
-// - Tries multiple endpoints & methods to avoid 405s
+// - Prefers /auth/guest POST (Pages Function) with Turnstile header
 // - Mirrors token to all legacy keys and broadcasts a storage event
-// - Optionally forwards a Turnstile token if your app exposes one
+// - Can obtain a Turnstile token either from a global helper or from the widget
 //
-// Note: This complements (not replaces) a server-side Pages Function
-// at /functions/auth/guest.ts, which can verify the token server-side.
+// Note: This complements (not replaces) the server-side Pages Function
+// at /frontend/functions/auth/guest.ts, which verifies the token server-side.
 
 import { apiUrl } from "../api/apiBase";
 
@@ -23,6 +23,14 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 declare global {
   interface Window {
     __cogGetTurnstileToken?: () => Promise<string>;
+    // Optional: if your app stores a widget id after rendering Turnstile
+    __cogTurnstileWidgetId?: string;
+    turnstile?: {
+      render: (el: string | HTMLElement, opts: any) => string;
+      getResponse: (widgetId?: string) => string;
+      execute?: (widgetId?: string, opts?: any) => void;
+      reset?: (widgetId?: string) => void;
+    };
   }
 }
 
@@ -61,12 +69,25 @@ function writeAll(token: string, exp?: number) {
 }
 
 async function getTurnstileToken(): Promise<string> {
+  // 1) Preferred: an app-provided async getter (lets UI decide when to render/execute)
   try {
     if (typeof window !== "undefined" && typeof window.__cogGetTurnstileToken === "function") {
       const t = await window.__cogGetTurnstileToken();
-      return (t && String(t)) || "";
+      if (t) return String(t);
     }
   } catch {}
+
+  // 2) Fallback: if Turnstile is already rendered on the page, read its response
+  try {
+    const ts = (typeof window !== "undefined" && window.turnstile) ? window.turnstile : undefined;
+    if (ts) {
+      // Use a widget id if your app saved one, else try calling without (some builds allow it)
+      const id = window.__cogTurnstileWidgetId;
+      const t = ts.getResponse?.(id);
+      if (t) return String(t);
+    }
+  } catch {}
+
   return "";
 }
 
@@ -100,24 +121,25 @@ async function tryEndpoint(
   const r = await fetch(url, init);
   const ct = (r.headers.get("content-type") || "").toLowerCase();
   const data = ct.includes("application/json") ? await r.json() : await r.text();
-  if (!r.ok) return null;
 
+  if (!r.ok) return null;
   return parseTokenPayload(data);
 }
 
 async function fetchGuestToken(): Promise<{ token: string; exp?: number } | null> {
-  // Prefer the modern endpoints; include legacy fallbacks.
+  // Turnstile is mandatory for POST /auth/guest. Obtain it up-front.
+  const tsToken = await getTurnstileToken().catch(() => "");
+
+  // Be decisive: hit the Pages Function first; keep minimal fallbacks.
   const candidates: Array<{ path: string; method: "GET" | "POST" }> = [
+    { path: "/auth/guest", method: "POST" },        // Pages Function (preferred)
+    { path: "/api/auth/guest", method: "POST" },    // legacy Worker
+    // keep GETs last; may 405 but harmless if older paths still exist somewhere
     { path: "/auth/guest", method: "GET" },
-    { path: "/auth/guest", method: "POST" },
     { path: "/api/auth/guest", method: "GET" },
-    { path: "/api/auth/guest", method: "POST" },
     { path: "/api/gen-jwt", method: "GET" },
     { path: "/gen-jwt", method: "GET" },
   ];
-
-  // Optional Turnstile token
-  const tsToken = await getTurnstileToken().catch(() => "");
 
   for (const c of candidates) {
     try {
