@@ -20,6 +20,8 @@ import "./index.css"; // ensure global styles (Tailwind or base CSS) are applied
 
 import RouterGate from "./RouterGate";
 import { apiUrl, ensureApiBase } from "./lib/api/apiBase";
+import "@/lib/voice/register-cartesia";
+
 
 /** ------------------------------------------------------------------------
  *  Minimal guest-auth bootstrap (waits before first render)
@@ -225,7 +227,7 @@ async function mount() {
   // Optional: minimal fallback text before we render the app
   const rootEl = document.getElementById("root");
   if (!rootEl) throw new Error("Missing #root element");
-  rootEl.textContent = "Initializing…";
+  rootEl.textContent = "Initializingï¿½";
 
   // 0) Discover API base (writes to global alias via ensureApiBase)
   try {
