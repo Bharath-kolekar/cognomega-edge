@@ -1,10 +1,10 @@
-﻿# wrangler.toml — Cognomega API Worker (prod)
+﻿# wrangler.toml — Cognomega API Worker (prod, merged with former auth worker config)
 
-name                = "cognomega-api"
-main                = "src/index.ts"
-compatibility_date  = "2025-09-03"
-workers_dev         = false         # we use zone routes instead of *.workers.dev
-#logpush             = true          # enable Logpush (optional; safe to keep)
+name               = "cognomega-api"
+main               = "src/index.ts"
+compatibility_date = "2025-09-03"
+workers_dev        = false
+# logpush          = true   # optional
 
 # Route *everything* under api.cognomega.com to this Worker
 routes = [
@@ -13,31 +13,51 @@ routes = [
 
 # --- Bindings ---
 
-# Cloudflare AI (used by some endpoints; safe to keep even if unused)
+# Cloudflare Workers AI
 [ai]
 binding = "AI"
 
-# R2 bucket (present + ready; keep if you plan to stream uploads/exports)
+# KV namespaces (from auth)
+[[kv_namespaces]]
+binding = "KEYS"         # public JWKS (key: "jwks")
+id      = "7e9d002852ba44849900a2babfcaf816"
+
+[[kv_namespaces]]
+binding = "KV_BILLING"   # credits + usage + jobs
+id      = "5da314a8b48b4db684678ab5ad074563"
+
+# R2 buckets
+# Keep BOTH: legacy code may use R2, new code uses R2_UPLOADS.
 [[r2_buckets]]
-binding     = "R2"
+binding     = "R2"                 # existing bucket your API used
 bucket_name = "cognomega-prod"
 
-# Static, non-secret config can live here (optional).
-[vars]
-# If your code reads these, you can configure CORS w/o redeploying code.
-# ALLOWED_ORIGINS = "https://app.cognomega.com,https://builder.cognomega.com,http://localhost:5174,http://localhost:5173"
-# TOKEN_TTL_SEC   = "3600"
+[[r2_buckets]]
+binding     = "R2_UPLOADS"         # used by the imported auth/billing module
+bucket_name = "cognomega-uploads"
 
-# If you use scheduled jobs (e.g., usage rollups), keep this.
+# --- Vars (non-secrets) brought over from auth ---
+
+[vars]
+# CORS / JWT / Credits
+CREDIT_PER_1K    = "0.05"                     # credits per 1k tokens
+ALLOWED_ORIGINS  = "https://app.cognomega.com"
+JWT_TTL_SEC      = "3600"
+ISSUER           = "https://api.cognomega.com"
+KID              = "k1"
+
+# Provider order & model defaults
+PREFERRED_PROVIDER = "groq,cfai,openai"
+
+GROQ_MODEL   = "llama-3.1-8b-instant"
+CF_AI_MODEL  = "@cf/meta/llama-3.1-8b-instruct"
+OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_BASE  = "https://api.openai.com/v1"
+
+# Optional (uncomment if you want to override)
+# GROQ_BASE        = "https://api.groq.com/openai/v1"
+# MAX_UPLOAD_BYTES = "10485760"    # 10MB
+
+# --- Scheduled tasks (you already had this; keep as-is) ---
 [triggers]
 crons = ["*/5 * * * *"]
-
-# ---- Optional: environment blocks (uncomment if you want per-env routes) ----
-# [env.staging]
-# name    = "cognomega-api-staging"
-# routes  = [{ pattern = "staging-api.cognomega.com/*", zone_name = "cognomega.com" }]
-# workers_dev = false
-#
-# [env.dev]
-# name    = "cognomega-api-dev"
-# workers_dev = true

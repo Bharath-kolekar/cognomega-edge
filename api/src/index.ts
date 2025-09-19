@@ -1,4 +1,16 @@
 ﻿// api/src/index.ts
+// --- Auth/Billing/Jobs/AI routes (ported from cognomega-auth) ---
+import { registerAuthBillingRoutes } from "./modules/auth_billing";
+
+// If your file defines an Env type for Bindings, ensure it includes:
+// AI: any;
+// KEYS: KVNamespace;
+// KV_BILLING: KVNamespace;
+// R2_UPLOADS: R2Bucket;
+// And the vars used by the module (ALLOWED_ORIGINS, PRIVATE_KEY_PEM, GROQ_API_KEY, OPENAI_API_KEY,
+// ADMIN_API_KEY, JWT_TTL_SEC, KID, ISSUER, PREFERRED_PROVIDER, GROQ_MODEL, CF_AI_MODEL, OPENAI_MODEL,
+// OPENAI_BASE, GROQ_BASE, CREDIT_PER_1K, MAX_UPLOAD_BYTES).
+
 // Hono + Neon + multi-provider LLM router (Groq / Workers AI / OpenAI)
 // Billing (credits), usage feed, SI skills (sketch_to_app queue),
 // admin processor (uploads artifact to R2), job download.
@@ -30,6 +42,61 @@ type R2Bucket = {
   ) => Promise<void>;
 };
 
+/**
+ * Superset Env used by auth/billing/jobs/AI module + existing API.
+ * (We keep your original fields and add the module’s requirements.)
+ */
+export interface Env {
+  /* ---------- Vars (string values from Wrangler) ---------- */
+  ALLOWED_ORIGINS?: string;      // e.g. "https://app.cognomega.com"
+  ISSUER?: string;               // e.g. "https://api.cognomega.com"
+  JWT_TTL_SEC?: string;          // e.g. "3600"
+  KID?: string;                  // e.g. "k1"
+
+  // AI selection & models
+  PREFERRED_PROVIDER?: string;   // "groq,cfai,openai"
+  GROQ_MODEL?: string;           // "llama-3.1-8b-instant"
+  CF_AI_MODEL?: string;          // "@cf/meta/llama-3.1-8b-instruct"
+  OPENAI_MODEL?: string;         // "gpt-4o-mini"
+  OPENAI_BASE?: string;          // default "https://api.openai.com/v1"
+  GROQ_BASE?: string;            // default "https://api.groq.com/openai/v1"
+
+  // Credits/usage pricing
+  CREDIT_PER_1K?: string;        // e.g. "0.05"
+
+  // Uploads
+  MAX_UPLOAD_BYTES?: string;     // e.g. "10485760" (10MB)
+
+  /* ---------- Secrets ---------- */
+  PRIVATE_KEY_PEM?: string;      // RS256 signing key (PEM)
+  GROQ_API_KEY?: string;
+  OPENAI_API_KEY?: string;
+  ADMIN_API_KEY?: string;        // for /api/credits/adjust + admin routes
+
+  // Voice/TTS (already bound in your worker — safe to keep)
+  CARTESIA_API_KEY?: string;
+
+  /* ---------- Bindings required by the new module ---------- */
+  AI: any;                       // Workers AI binding
+  KEYS: KVNamespace;             // public JWKS (key "jwks")
+  KV_BILLING: KVNamespace;       // credits + usage + jobs
+  R2_UPLOADS: R2Bucket;          // direct-upload bucket
+
+  /* ---------- Your existing fields (kept intact) ---------- */
+  DATABASE_URL?: string;
+  NEON_DATABASE_URL?: string;
+
+  ADMIN_KEY?: string;
+  ADMIN_TASK_SECRET?: string;
+
+  LLM_PROVIDER?: "groq" | "openai" | "workers_ai";
+  LLM_MODEL?: string;
+
+  // Your existing R2 binding used by /v1/files/upload
+  R2?: R2Bucket;
+}
+
+/** (Legacy) Original Bindings type — kept for reference. Prefer Env above. */
 type Bindings = {
   AI: any; // Workers AI binding
 
@@ -56,15 +123,13 @@ type Bindings = {
   R2?: R2Bucket;
 };
 
-type Ctx = {
-  Bindings: Bindings;
-  Variables: {
-    email?: string;
-    userId?: string;
-  };
+type CtxVars = {
+  email?: string;
+  userId?: string;
 };
 
-const app = new Hono<Ctx>();
+// Use Env for Bindings, keep your Variables intact
+const app = new Hono<{ Bindings: Env; Variables: CtxVars }>();
 
 // -------- CORS (strict + works for upload) --------
 
@@ -94,6 +159,8 @@ app.use(
       "Accept",
       "CF-Turnstile-Token",
       "X-User-Email",
+      "X-Admin-Key",
+      "X-Admin-Token",
     ],
     exposeHeaders: [
       "Content-Type",
@@ -101,6 +168,10 @@ app.use(
       "X-Credits-Used",
       "X-Credits-Balance",
       "X-Request-Id",
+      "X-Tokens-In",
+      "X-Tokens-Out",
+      "X-Provider",
+      "X-Model",
     ],
     maxAge: 86400,
     credentials: true, // some callers use credentials:"include"
@@ -116,13 +187,19 @@ app.options("*", (c) => {
   headers.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
   headers.set(
     "Access-Control-Allow-Headers",
-    acrh || "Authorization,Content-Type,Accept,CF-Turnstile-Token,X-User-Email"
+    acrh || "Authorization,Content-Type,Accept,CF-Turnstile-Token,X-User-Email,X-Admin-Key,X-Admin-Token"
   );
   headers.set("Access-Control-Max-Age", "86400");
   headers.set("Access-Control-Allow-Credentials", "true");
   if (isAllowed(origin)) headers.set("Access-Control-Allow-Origin", origin);
   return new Response(null, { status: 204, headers });
 });
+
+/* ===========================
+   Hunk B — Mount new routes
+   =========================== */
+// ---- Mount Auth/Billing/Usage/Jobs/AI routes ----
+registerAuthBillingRoutes(app);
 
 // -------- Helpers --------
 const sqlFor = (c: any) => {
@@ -875,10 +952,10 @@ app.get("/api/tts/cartesia/realtime-token", async (c) => {
 
 // -------- Export CF Worker entrypoints --------
 export default {
-  fetch: (req: Request, env: Bindings, ctx: ExecutionContext) => app.fetch(req, env, ctx),
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => app.fetch(req, env, ctx),
 
   // Cron: */5 * * * *  — kicks the queue periodically
-  async scheduled(_event: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     // Up to 5 jobs per tick
     const makeReq = () =>
       new Request("http://internal/admin/process-one", {
