@@ -41,6 +41,9 @@ type Bindings = {
   ADMIN_KEY?: string;
   ADMIN_TASK_SECRET?: string;
 
+  // TTS providers
+  CARTESIA_API_KEY?: string;
+
   // LLM keys
   OPENAI_API_KEY?: string;
   GROQ_API_KEY?: string;
@@ -819,6 +822,56 @@ ${spec.slice(0, 200)}
   console.log(`[admin] processed job_id=${j.id}`);
   return c.json({ ok: true, job_id: j.id, status: "done", r2_key: r2Key ?? undefined });
 });
+
+// -------- TTS: Cartesia proxy (batch + realtime token) --------
+
+/**
+ * POST /api/tts/cartesia/batch
+ * Body: { text: string, voice?: string, format?: "mp3"|"wav" }
+ * Returns: audio/* on success, or JSON error.
+ */
+app.post("/api/tts/cartesia/batch", async (c) => {
+  const key = c.env.CARTESIA_API_KEY || "";
+  const wants = c.req.header("accept") || "";
+
+  // Read JSON body (tolerant)
+  const body = await c.req.json().catch(() => ({}));
+  const text = String(body?.text || "");
+  const voice = (body?.voice && String(body.voice)) || undefined;
+  const format = (body?.format && String(body.format)) || "mp3";
+
+  if (!text.trim()) return c.json({ error: "missing_text" }, 400);
+
+  // Not configured yet? Return a clean capability signal.
+  if (!key) {
+    // Tell the browser we acknowledge the route but it’s not wired yet.
+    return c.json({ error: "cartesia_unconfigured" }, 501);
+  }
+
+  // TODO: Wire real Cartesia call here:
+  // - Construct request with API key
+  // - Choose voice/model from `voice`/defaults
+  // - Request MP3/WAV bytes
+  // - Stream back with audio/* content-type
+  //
+  // For safety (no hallucinated upstream), we provide a friendly 501 until you paste the
+  // official call. This keeps the client happy (it will fall back to dummy speech).
+  return c.json({ error: "cartesia_not_implemented_yet" }, 501);
+});
+
+/**
+ * GET /api/tts/cartesia/realtime-token
+ * Returns: ephemeral auth object for realtime transport (when enabled).
+ */
+app.get("/api/tts/cartesia/realtime-token", async (c) => {
+  const key = c.env.CARTESIA_API_KEY || "";
+  if (!key) return c.json({ error: "cartesia_unconfigured" }, 501);
+
+  // TODO: Exchange for a short-lived token / WebRTC credentials (provider-specific).
+  // Until that is set up, respond with 501 so the client falls back.
+  return c.json({ error: "cartesia_realtime_unavailable" }, 501);
+});
+
 
 // -------- Export CF Worker entrypoints --------
 export default {
