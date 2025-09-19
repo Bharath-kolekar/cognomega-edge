@@ -88,7 +88,7 @@ app.use(
     allowHeaders: [
       "Authorization",
       "Content-Type",
-      "X-Requested-With",     // <-- added
+      "Accept",
       "CF-Turnstile-Token",
       "X-User-Email",
     ],
@@ -100,7 +100,7 @@ app.use(
       "X-Request-Id",
     ],
     maxAge: 86400,
-    credentials: false, // we use Authorization header, not cookies
+    credentials: true, // some callers use credentials:"include"
   })
 );
 
@@ -111,14 +111,13 @@ app.options("*", (c) => {
   const headers = new Headers();
   headers.set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
   headers.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
-  // Mirror what the browser asked for; fallback includes X-Requested-With
   headers.set(
     "Access-Control-Allow-Headers",
-    acrh || "Authorization,Content-Type,X-Requested-With,CF-Turnstile-Token,X-User-Email"
+    acrh || "Authorization,Content-Type,Accept,CF-Turnstile-Token,X-User-Email"
   );
   headers.set("Access-Control-Max-Age", "86400");
+  headers.set("Access-Control-Allow-Credentials", "true");
   if (isAllowed(origin)) headers.set("Access-Control-Allow-Origin", origin);
-  // 204 = no body
   return new Response(null, { status: 204, headers });
 });
 
