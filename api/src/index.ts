@@ -195,6 +195,25 @@ app.options("*", (c) => {
   return new Response(null, { status: 204, headers });
 });
 
+// 1) Workers AI binding probe (used for sanity checks)
+app.get("/api/ai/binding", (c) => {
+  const ok = !!c.env.AI && typeof (c.env.AI as any).run === "function";
+  return c.json({ ai_bound: ok }, ok ? 200 : 500);
+});
+
+// 2) Serve JWKS from KV so clients can verify our RS256 JWTs
+app.get("/.well-known/jwks.json", async (c) => {
+  const raw = await c.env.KEYS.get("jwks");
+  const body = raw ?? JSON.stringify({ keys: [] });
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=300",
+    },
+  });
+});
+
 /* ===========================
    Hunk B — Mount new routes
    =========================== */
