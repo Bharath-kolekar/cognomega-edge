@@ -1,5 +1,6 @@
 ﻿import { defineConfig, splitVendorChunkPlugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath, URL } from "node:url";
 
 // --- Dev proxy target (unchanged) ---
 const target = "https://api.cognomega.com";
@@ -10,6 +11,13 @@ export default defineConfig({
     // Helps split common vendor chunks automatically
     splitVendorChunkPlugin(),
   ],
+
+  // Resolve aliases (so "@/..." maps to "./src/...")
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
 
   // ---- Development server: keep your existing proxies intact ----
   server: {
