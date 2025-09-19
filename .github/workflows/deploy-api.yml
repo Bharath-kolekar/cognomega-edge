@@ -1,0 +1,31 @@
+name: Deploy API (Cloudflare Workers)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: api
+          # wrangler.toml already has name/routes/compatibility_date
+          command: deploy
+          packageManager: npm
