@@ -46,3 +46,8 @@ id = "5da314a8b48b4db684678ab5ad074563"
 [[r2_buckets]]
 binding = "R2_UPLOADS"
 bucket_name = "cognomega-uploads"
+
+services = [
+  { binding = "VOICE_API", service = "cognomega-api" }
+]
+

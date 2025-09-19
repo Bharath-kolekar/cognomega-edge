@@ -22,6 +22,22 @@
 //   GET  /api/admin/ping
 //   POST /api/admin/cleanup
 
+// --- Local type for R2 (TS-only; runtime provided by Workers) ---
+type R2Bucket = {
+  get(key: string): Promise<
+    | { body: ReadableStream | null; httpMetadata?: { contentType?: string | null } | null }
+    | null
+  >;
+  put(
+    key: string,
+    value: ArrayBuffer | string | ReadableStream,
+    opts?: {
+      httpMetadata?: { contentType?: string };
+      customMetadata?: Record<string, string>;
+    }
+  ): Promise<void>;
+};
+
 export interface Env {
   // Vars
   ALLOWED_ORIGINS?: string;
@@ -52,6 +68,7 @@ export interface Env {
   KEYS: KVNamespace;           // public JWKS
   KV_BILLING: KVNamespace;     // credits + usage + jobs
   R2_UPLOADS: R2Bucket;        // R2 bucket for uploads
+  VOICE_API?: Fetcher;         // Service binding to cognomega-api (voice/API)
 }
 
 type Json = Record<string, unknown> | Array<unknown>;
@@ -728,6 +745,23 @@ function handleReady(req: Request, env: Env): Response {
   return json({ ok }, req, env, ok ? 200 : 500);
 }
 
+// Internal: ping API worker via service binding for voice health
+async function handleVoiceHealth(req: Request, env: Env): Promise<Response> {
+  if (req.method === "OPTIONS") return noContent(req, env);
+  if (!env.VOICE_API) return json({ ok: false, error: "service_unbound" }, req, env, 503);
+
+  try {
+    const t0 = Date.now();
+    const r = await env.VOICE_API.fetch(new Request("http://internal/ready", { method: "GET" }));
+    const ms = Date.now() - t0;
+    let detail: any = null;
+    try { detail = await r.json(); } catch { /* ignore */ }
+    return json({ ok: r.ok, status: r.status, ms, detail }, req, env, r.ok ? 200 : 502);
+  } catch (e: any) {
+    return json({ ok: false, error: String(e?.message || e) }, req, env, 502);
+  }
+}
+
 // ---------- Router helpers
 
 function isUsagePath(p: string): boolean {
@@ -930,6 +964,11 @@ export default {
       // Health
       if (p === "/ready" || p === "/healthz" || p === "/api/ready" || p === "/api/healthz" || p === "/api/v1/healthz") {
         return handleReady(req, env);
+      }
+
+      // Internal voice health via service binding
+      if (p === "/internal/voice/health") {
+        return handleVoiceHealth(req, env);
       }
 
       // Auth (plain, /api/, /api/v1/)
