@@ -1,4 +1,4 @@
-ï»¿// frontend/src/pages/SketchToApp.tsx
+// frontend/src/pages/SketchToApp.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, authHeaders, readUserEmail } from "../lib/api/apiBase";
 import LaunchInBuilder from "../components/LaunchInBuilder";
@@ -106,7 +106,7 @@ async function mintGuestToken(): Promise<string | null> {
   return null;
 }
 
-/** Ensure we have *some* token (donâ€™t over-validate expiry for guest). */
+/** Ensure we have *some* token (don’t over-validate expiry for guest). */
 async function ensureAuthToken(force = false): Promise<string | null> {
   if (!force) {
     const t = readAnyToken();
@@ -200,7 +200,7 @@ export default function SketchToApp() {
     const id = p.get("job");
     if (id) {
       setJobId(id);
-      setInfo("Restored job from URL. Pollingâ€¦");
+      setInfo("Restored job from URL. Polling…");
       setError(null);
       startPolling(id);
     }
@@ -281,7 +281,7 @@ export default function SketchToApp() {
         } catch (e: any) {
           if (pollAbort.current?.signal.aborted) return;
           if (Date.now() - pollStart.current <= POLL_TIMEOUT_MS) {
-            setInfo("Reconnectingâ€¦");
+            setInfo("Reconnecting…");
             pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
           } else {
             setInfo(null);
@@ -300,7 +300,7 @@ export default function SketchToApp() {
     async (f: File) => {
       setBusy(true);
       setError(null);
-      setInfo("Uploadingâ€¦");
+      setInfo("Uploading…");
       setJob(null);
       setJobId(null);
 
@@ -350,7 +350,7 @@ export default function SketchToApp() {
                 const t = await r.text();
                 throw new Error(`${r.status} ${r.statusText} | ${t.slice(0, 160)}`);
               }
-              // Not JSON but OK â€” keep probing next (some endpoints may redirect)
+              // Not JSON but OK — keep probing next (some endpoints may redirect)
               continue;
             }
             resp = r;
@@ -383,11 +383,11 @@ export default function SketchToApp() {
 
         if (job_id) {
           setJobId(job_id);
-          setInfo("Uploaded. Processingâ€¦");
+          setInfo("Uploaded. Processing…");
           startPolling(job_id);
         } else {
-          // Successful upload without a job â€” surface result, but no polling
-          setInfo("Uploaded âœ“ (no processing job returned by server)");
+          // Successful upload without a job — surface result, but no polling
+          setInfo("Uploaded ? (no processing job returned by server)");
         }
       } catch (e: any) {
         const msg = e?.message || "Upload failed";
@@ -430,7 +430,7 @@ export default function SketchToApp() {
   const onDownload = useCallback(async () => {
     if (!jobId) return;
     setError(null);
-    setInfo("Preparing downloadâ€¦");
+    setInfo("Preparing download…");
     try {
       await ensureAuthToken();
       let r = await fetch(
@@ -509,7 +509,7 @@ export default function SketchToApp() {
           onDrop={onDrop}
         >
           <div className="flex items-start justify-between gap-4">
-            <h1 className="text-2xl font-semibold">Sketch â†’ App</h1>
+            <h1 className="text-2xl font-semibold">Sketch ? App</h1>
             {job?.status && (
               <span
                 className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -523,7 +523,7 @@ export default function SketchToApp() {
                 {job.status}
                 {typeof job.progress !== "undefined" &&
                   job.progress !== null &&
-                  ` â€¢ ${String(job.progress)}%`}
+                  ` • ${String(job.progress)}%`}
               </span>
             )}
           </div>
@@ -551,7 +551,7 @@ export default function SketchToApp() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={3}
-                placeholder="Add any notes about the UI or behaviorâ€¦"
+                placeholder="Add any notes about the UI or behavior…"
                 className={inputCls}
               />
             </div>
@@ -567,7 +567,7 @@ export default function SketchToApp() {
                 }`}
                 title="Upload selected file (Ctrl/Cmd + Enter)"
               >
-                {busy ? "Uploadingâ€¦" : "Upload"}
+                {busy ? "Uploading…" : "Upload"}
               </button>
 
               {jobId && (

@@ -1,4 +1,4 @@
-ï»¿import { apiUrl, ensureApiBase, ensureApiEndpoints, fetchJson } from "../api/apiBase";
+import { apiUrl, ensureApiBase, ensureApiEndpoints, fetchJson } from "../api/apiBase";
 
 export type CreditsInfo = {
   balance?: number;
@@ -51,18 +51,18 @@ export async function fetchCredits(): Promise<CreditsInfo> {
       };
     }
 
-    // Authorization issue â†’ tell caller to sign in
+    // Authorization issue ? tell caller to sign in
     if (r.status === 401 || r.status === 403) {
       return { requiresAuth: true };
     }
 
-    // Keep trying next candidate if this one simply isnâ€™t there
+    // Keep trying next candidate if this one simply isn’t there
     if (r.status === 404) {
       saw404 = true;
       continue;
     }
 
-    // Any other failure: return the raw data but donâ€™t explode the UI
+    // Any other failure: return the raw data but don’t explode the UI
     return { raw: r.data };
   }
 
@@ -78,17 +78,17 @@ export async function fetchCreditBalance(): Promise<number | null> {
 
 // Keep label logic identical, just benefits from the broader parsing above
 export function formatCreditsLabel(input: CreditsInfo | number | null | undefined): string {
-  if (input == null) return "â€”";
+  if (input == null) return "—";
   if (typeof input === "number") return String(input);
 
   const info = input as CreditsInfo;
   if (info.requiresAuth) return "Sign in";
-  if (info.unsupported) return "â€”";
+  if (info.unsupported) return "—";
 
   if (typeof info.balance === "number") {
     const v = info.balance;
     if (info.currency && typeof info.currency === "string") return `${v} ${info.currency}`;
     return `${v}`;
   }
-  return "â€”";
+  return "—";
 }

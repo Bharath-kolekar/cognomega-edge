@@ -1,12 +1,12 @@
-﻿// frontend/src/RouterGate.tsx
+// frontend/src/RouterGate.tsx
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 
 const LazySketchToApp = React.lazy(() => import("./pages/SketchToApp"));
 const LazyMainApp = React.lazy(() => import("./App"));
 
 /**
- * RouterGate — ultra-light client router
- * - Chooses between the Sketch→App tool and the main App bundle
+ * RouterGate � ultra-light client router
+ * - Chooses between the Sketch?App tool and the main App bundle
  * - Handles direct path, hash-based, and query-string routes
  * - Listens to history changes (back/forward)
  * - Gracefully retries on chunk-load failures
@@ -119,7 +119,7 @@ function PageFallback({ isSketch }: { isSketch: boolean }) {
             animation: "spin 0.9s linear infinite",
           }}
         />
-        <div>{isSketch ? "Loading Sketch → App…" : "Loading app…"}</div>
+        <div>{isSketch ? "Loading Sketch ? App�" : "Loading app�"}</div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>

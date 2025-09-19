@@ -1,4 +1,4 @@
-ï»¿// frontend/src/components/CreditPill.tsx
+// frontend/src/components/CreditPill.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, authHeaders } from "../lib/api/apiBase";
 
@@ -55,7 +55,7 @@ function normalizeCredits(x: CreditsWire): NormalizedCredits {
 }
 
 function formatNum(n: number | null, minFrac = 0, maxFrac = 2): string {
-  if (n == null || !Number.isFinite(n)) return "â€”";
+  if (n == null || !Number.isFinite(n)) return "—";
   try {
     return new Intl.NumberFormat(undefined, {
       minimumFractionDigits: minFrac,
@@ -134,11 +134,11 @@ export default function CreditPill({ refreshMs = 45000, apiBase, compact = true 
     if (credits.expiresAt) parts.push(`Expires: ${credits.expiresAt}`);
     if (ts) parts.push(`Updated: ${new Date(ts).toLocaleTimeString()}`);
     if (status === "err" && err) parts.push(`Error: ${err}`);
-    return parts.join(" â€¢ ");
+    return parts.join(" • ");
   }, [credits, ts, status, err]);
 
   const displayValue =
-    credits.balance != null ? `${formatNum(credits.balance)} ${credits.unit}` : "â€”";
+    credits.balance != null ? `${formatNum(credits.balance)} ${credits.unit}` : "—";
 
   const styles = compact
     ? {

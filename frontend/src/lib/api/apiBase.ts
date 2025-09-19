@@ -1,6 +1,6 @@
 // frontend/src/lib/api/apiBase.ts
 /** apiBase.ts — Cross-origin canonical (production-grade)
- * - Always uses absolute API base (VITE_API_BASE or https://api.cognomega.com)
+ * - Absolute API base (priority: localStorage override > window.__COG__.API_BASE > VITE_API_BASE > process.env > https://api.cognomega.com)
  * - Deterministic endpoints (no probing, no dev-relative fallbacks)
  * - Credential-less fetch by default (simpler CORS); callers may override
  * - Back-compat globals: window.__apiBase, window.__cogApiBase, window.__apiEndpoints
@@ -13,6 +13,7 @@ let _eps: ApiEndpoints | null = null;
 
 export type ApiEndpoints = {
   ready: string;       // /ready (matches Worker)
+  healthz: string;     // /healthz
   guestAuth: string;   // /auth/guest
   credits: string;     // /api/billing/balance
   usage: string;       // /api/billing/usage
@@ -26,6 +27,21 @@ export type FetchJsonResult<T = any> = {
 };
 
 /* ------------------------------- Base Resolve ------------------------------ */
+
+function readRuntimeOverride(): string {
+  try {
+    const g = globalThis as any;
+    const val =
+      g?.__COG__?.API_BASE
+        ? String(g.__COG__.API_BASE).trim()
+        : g?.__COG__?.api_base
+        ? String(g.__COG__.api_base).trim()
+        : "";
+    return val;
+  } catch {
+    return "";
+  }
+}
 
 function readEnvBase(): string {
   // Prefer Vite env (baked at build time)
@@ -46,7 +62,7 @@ function readEnvBase(): string {
     if (nodeVal) return nodeVal;
   } catch {}
 
-  return "https://api.cognomega.com";
+  return "";
 }
 
 function normalizeBase(u: string): string {
@@ -56,7 +72,7 @@ function normalizeBase(u: string): string {
 function resolveBase(): string {
   if (_base) return _base;
 
-  // Manual override for QA (highest precedence)
+  // 1) Manual override for QA (highest precedence)
   try {
     const manual = localStorage.getItem("api_base_override");
     if (manual && manual.trim()) {
@@ -67,6 +83,16 @@ function resolveBase(): string {
     }
   } catch {}
 
+  // 2) Runtime override provided by hosting layer (_worker/pages) or index.html
+  const runtime = readRuntimeOverride();
+  if (runtime) {
+    _base = normalizeBase(runtime);
+    (globalThis as any).__cogApiBase = _base;
+    (globalThis as any).__apiBase = _base;
+    return _base;
+  }
+
+  // 3) Build-time envs
   const forced = readEnvBase() || "https://api.cognomega.com";
   _base = normalizeBase(forced);
   (globalThis as any).__cogApiBase = _base;
@@ -96,6 +122,7 @@ export async function ensureApiEndpoints(): Promise<ApiEndpoints> {
 
   const endpoints: ApiEndpoints = {
     ready:     apiUrl("/ready"),
+    healthz:   apiUrl("/healthz"),
     guestAuth: apiUrl("/auth/guest"),
     credits:   apiUrl("/api/billing/balance"),
     usage:     apiUrl("/api/billing/usage"),
@@ -129,7 +156,7 @@ export function setApiBaseOverride(base: string): void {
 export function clearApiBaseOverride(): void {
   try { localStorage.removeItem("api_base_override"); } catch {}
   _base = null;
-  resolveBase(); // recompute from env
+  resolveBase(); // recompute from env/runtime
 }
 
 /** Whether a manual override exists */
@@ -148,10 +175,9 @@ export async function fetchJson<T = any>(
 ): Promise<FetchJsonResult<T>> {
   const url = apiUrl(path);
   const mergedHeaders = new Headers(authHeaders(init.headers || {}));
-  // Belt-and-suspenders: strip problematic headers on the wire
+  // Belt-and-suspenders: strip X-Requested-With in any casing
   mergedHeaders.delete("X-Requested-With");
   mergedHeaders.delete("x-requested-with");
-  mergedHeaders.delete("x-user-email");
 
   const r = await fetch(url, {
     credentials: init.credentials ?? "omit",
@@ -237,15 +263,14 @@ export function readUserEmail(): string | null {
 
 /** Merge provided headers with auth defaults (Accept + Authorization)
  * Returns a POJO (not a Headers object) for wide compatibility.
- * NOTE: We intentionally DO NOT send X-Requested-With or custom identity headers.
+ * NOTE: We intentionally DO NOT set X-Requested-With (it breaks CORS preflight).
  */
 export function authHeaders(init: HeadersInit = {}): HeadersInit {
   const h = new Headers(init as any);
 
-  // Never send noisy/custom headers that trigger preflights
+  // Never send X-Requested-With (strip any casing if present)
   h.delete("X-Requested-With");
   h.delete("x-requested-with");
-  h.delete("x-user-email");
 
   if (!h.has("Accept")) h.set("Accept", "application/json");
 

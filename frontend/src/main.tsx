@@ -1,4 +1,4 @@
-﻿// frontend/src/main.tsx
+// frontend/src/main.tsx
 // Force safe cross-origin defaults + strip XRW everywhere
 {
   const orig = window.fetch;
@@ -225,7 +225,7 @@ async function mount() {
   // Optional: minimal fallback text before we render the app
   const rootEl = document.getElementById("root");
   if (!rootEl) throw new Error("Missing #root element");
-  rootEl.textContent = "Initializing…";
+  rootEl.textContent = "Initializing�";
 
   // 0) Discover API base (writes to global alias via ensureApiBase)
   try {

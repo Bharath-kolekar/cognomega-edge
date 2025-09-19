@@ -1,4 +1,4 @@
-ï»¿// C:\dev\cognomega-edge\frontend\src\App.tsx
+// C:\dev\cognomega-edge\frontend\src\App.tsx
 import {
   apiUrl,
   readUserEmail,
@@ -199,7 +199,7 @@ function getOrCreateClientId(): string {
 export default function App() {
   const [ready, setReady] = useState(false);
 
-  // Split outputs so upload doesnâ€™t pollute Ask console
+  // Split outputs so upload doesn’t pollute Ask console
   const [askResp, setAskResp] = useState<string>("");
   const [uploadResp, setUploadResp] = useState<string>("");
 
@@ -394,7 +394,7 @@ export default function App() {
         await (window as any).__cogAuthReady;
       } catch {}
 
-      const paths = ["/ready", "/api/ready", "/health", "/api/health", "/healthz", "/api/healthz", "/api/v1/healthz"];
+      const paths = ["/ready", "/ready", "/health", "/healthz", "/healthz", "/healthz", "/api/v1/healthz"];
       let reported = false;
       for (const p of paths) {
         try {
@@ -416,7 +416,7 @@ export default function App() {
       setHealth((h) => (reported ? h : "down"));
     })();
 
-    // WebLLM (best-effort) â€” dynamic import + loose typing to avoid TS signature drift
+    // WebLLM (best-effort) — dynamic import + loose typing to avoid TS signature drift
     (async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -692,7 +692,7 @@ export default function App() {
       if (email) headers["X-User-Email"] = email;
       if (jwtRef.current) headers["Authorization"] = `Bearer ${jwtRef.current}`;
 
-      // Streaming hint â€” server may ignore
+      // Streaming hint — server may ignore
       if (stream) headers["Accept"] = "text/event-stream";
 
       const body = {
@@ -819,7 +819,7 @@ export default function App() {
 
       const ok = data as Extract<UploadResp, { ok: true }>;
       setInfo(
-        `Uploaded âœ“  key=${ok.key}  size=${ok.size}  ` +
+        `Uploaded ?  key=${ok.key}  size=${ok.size}  ` +
           (ok.content_type ? `ct=${ok.content_type}` : "")
       );
       setUploadResp(JSON.stringify(ok, null, 2));
@@ -911,14 +911,14 @@ export default function App() {
           <div style={{ display: "flex", gap: 8 }}>
             <button
               data-role="ask-button"
-              data-voice-hint="Send your prompt to Cognomega. Weâ€™ll record telemetry and credits for your selected intelligence tier."
+              data-voice-hint="Send your prompt to Cognomega. We’ll record telemetry and credits for your selected intelligence tier."
               onClick={ask}
             >
               Ask
             </button>
             <button
               data-role="mic"
-              data-voice-hint="Start voice dictation. Speak your prompt and weâ€™ll transcribe it here."
+              data-voice-hint="Start voice dictation. Speak your prompt and we’ll transcribe it here."
               onClick={toggleDictation}
               title={listening ? "Stop voice dictation" : "Start voice dictation"}
               style={{ opacity: listening ? 1 : 0.95, border: listening ? "1px solid #22c55e" : undefined }}
@@ -1046,7 +1046,7 @@ export default function App() {
         <button
           type="button"
           data-role="upload-button"
-          data-voice-hint="Upload a file directly to secure R2 storage. Weâ€™ll return a key you can reference in skills."
+          data-voice-hint="Upload a file directly to secure R2 storage. We’ll return a key you can reference in skills."
           onClick={upload}
           disabled={!authReady || uploading}
         >
@@ -1095,7 +1095,7 @@ export default function App() {
           "[data-role='upload-button']":
             "Upload a file to R2 and use the returned key in skills.",
           "[data-role='mic']":
-            "Start voice dictation. Speak your prompt and weâ€™ll transcribe it here.",
+            "Start voice dictation. Speak your prompt and we’ll transcribe it here.",
         }}
       />
     </div>
