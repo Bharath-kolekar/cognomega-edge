@@ -1,4 +1,15 @@
 ﻿// frontend/src/main.tsx
+// Force safe cross-origin defaults + strip XRW everywhere
+{
+  const orig = window.fetch;
+  window.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const h = new Headers(init.headers || {});
+    h.delete("X-Requested-With"); h.delete("x-requested-with");
+    const patched: RequestInit = { credentials: "omit", ...init, headers: h };
+    return orig(input as any, patched);
+  };
+}
+
 import "./lib/turnstile";            // side-effect: defines window.__cogGetTurnstileToken
 import { getTurnstileToken } from "./lib/turnstile"; // used by callers
 
