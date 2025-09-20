@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import { apiUrl } from "@/lib/api/apiBase";
 
 /**
  * DirectR2Upload — drop-in React uploader for POST /api/upload/direct
@@ -11,8 +12,9 @@ import React, { useRef, useState } from "react";
  *  - Caller identity via X-User-Email header (or JWT/cookie/query)
  *
  * Props:
- *  - apiBase: API origin (default https://api.cognomega.com)
- *  - email  : caller email to attribute usage (required)
+ *  - apiBase?: Optional API origin override. If a non-empty string is provided, we use it.
+ *              Otherwise we always build URLs via apiUrl() (preferred).
+ *  - email   : caller email to attribute usage (required)
  *  - maxBytes: client-side size cap (default 10 MB — match server default)
  */
 
@@ -28,13 +30,13 @@ type UploadOk = {
 type UploadErr = { error: string; [k: string]: any };
 
 type Props = {
-  apiBase?: string;
+  apiBase?: string | unknown;
   email: string;
   maxBytes?: number;
 };
 
 export default function DirectR2Upload({
-  apiBase = "https://api.cognomega.com",
+  apiBase,
   email,
   maxBytes = 10 * 1024 * 1024,
 }: Props) {
@@ -45,14 +47,38 @@ export default function DirectR2Upload({
   const [result, setResult] = useState<UploadOk | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const resolvedBase =
+    typeof apiBase === "string" && apiBase.trim()
+      ? apiBase.trim().replace(/\/+$/, "")
+      : null;
+
+  function buildUrl(path: string): string {
+    if (resolvedBase) return `${resolvedBase}${path}`;
+    return apiUrl(path);
+  }
+
+  function displayApiBase(): string {
+    // show the explicit override if provided; otherwise show the discovered base
+    return resolvedBase || apiUrl("");
+  }
+
   function fmtBytes(n: number) {
-    const units = ["B", "KB", "MB", "GB"]; let i = 0; let v = n;
-    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    const units = ["B", "KB", "MB", "GB"];
+    let i = 0;
+    let v = n;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
     return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
   }
 
   async function handleUpload() {
-    setMsg(""); setErr(null); setResult(null); setProgress(0);
+    setMsg("");
+    setErr(null);
+    setResult(null);
+    setProgress(0);
+
     const input = fileRef.current;
     if (!input || !input.files || input.files.length === 0) {
       setErr("Choose a file first.");
@@ -68,7 +94,7 @@ export default function DirectR2Upload({
       return;
     }
 
-    const url = `${apiBase}/api/upload/direct?filename=${encodeURIComponent(file.name)}`;
+    const url = buildUrl(`/api/upload/direct?filename=${encodeURIComponent(file.name)}`);
 
     setBusy(true);
 
@@ -100,7 +126,12 @@ export default function DirectR2Upload({
           type="file"
           className="block w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border file:border-gray-200 file:bg-gray-50 file:hover:bg-gray-100 file:text-gray-700"
           disabled={busy}
-          onChange={() => { setErr(null); setResult(null); setMsg(""); setProgress(0); }}
+          onChange={() => {
+            setErr(null);
+            setResult(null);
+            setMsg("");
+            setProgress(0);
+          }}
         />
         <button
           onClick={handleUpload}
@@ -117,7 +148,9 @@ export default function DirectR2Upload({
         </div>
       )}
 
-      <div className="text-xs text-gray-500 mb-3">Max size: {fmtBytes(maxBytes)} · API: {apiBase}</div>
+      <div className="text-xs text-gray-500 mb-3">
+        Max size: {fmtBytes(maxBytes)} · API: {displayApiBase()}
+      </div>
 
       {msg && <div className="text-sm text-green-700 mb-2">{msg}</div>}
       {err && (
@@ -129,12 +162,22 @@ export default function DirectR2Upload({
       {result && (
         <div className="mt-3 text-sm rounded-xl border border-gray-200 p-3 bg-gray-50">
           <div className="font-medium mb-1">Stored</div>
-          <div><span className="text-gray-500">Key:</span> <code className="break-all">{result.key}</code></div>
-          <div><span className="text-gray-500">Size:</span> {fmtBytes(result.size)}</div>
-          <div><span className="text-gray-500">ETag:</span> {result.etag ?? "—"}</div>
-          <div><span className="text-gray-500">Type:</span> {result.content_type}</div>
+          <div>
+            <span className="text-gray-500">Key:</span>{" "}
+            <code className="break-all">{result.key}</code>
+          </div>
+          <div>
+            <span className="text-gray-500">Size:</span> {fmtBytes(result.size)}
+          </div>
+          <div>
+            <span className="text-gray-500">ETag:</span> {result.etag ?? "—"}
+          </div>
+          <div>
+            <span className="text-gray-500">Type:</span> {result.content_type}
+          </div>
           <div className="mt-2 text-xs text-gray-500">
-            Retrieve via Wrangler: <code>wrangler r2 object get --remote "cognomega-uploads/{'{'}key{'}'}"</code>
+            Retrieve via Wrangler:{" "}
+            <code>wrangler r2 object get --remote "cognomega-uploads/{{key}}"</code>
           </div>
         </div>
       )}
@@ -163,16 +206,20 @@ function xhrUpload(
       try {
         const status = xhr.status;
         const text = xhr.responseText || "";
-        const json = text ? JSON.parse(text) as UploadOk | UploadErr : ({} as any);
+        const json = text ? (JSON.parse(text) as UploadOk | UploadErr) : ({} as any);
         if (status === 200 && (json as any).ok) return resolve(json as UploadOk);
 
         // Map server errors to friendly messages
         if ((json as any).error) {
           const e = json as UploadErr;
-          if (e.error === "length_required") return reject(new Error("Length required (browser didn’t include Content-Length)."));
-          if (e.error === "payload_too_large") return reject(new Error("Payload too large (exceeds server limit)."));
-          if (e.error === "missing_email") return reject(new Error("Missing email (X-User-Email)."));
-          if (e.error === "r2_not_bound") return reject(new Error("R2 binding missing on server."));
+          if (e.error === "length_required")
+            return reject(new Error("Length required (browser didn’t include Content-Length)."));
+          if (e.error === "payload_too_large")
+            return reject(new Error("Payload too large (exceeds server limit)."));
+          if (e.error === "missing_email")
+            return reject(new Error("Missing email (X-User-Email)."));
+          if (e.error === "r2_not_bound")
+            return reject(new Error("R2 binding missing on server."));
           return reject(new Error(`${e.error}`));
         }
         return reject(new Error(`HTTP ${status}`));
