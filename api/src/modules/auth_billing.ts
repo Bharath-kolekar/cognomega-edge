@@ -94,8 +94,30 @@ function corsHeaders(req: Request, env: AuthBillingEnv): Headers {
   );
   h.set("Access-Control-Allow-Credentials", "true");
   h.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS,PATCH");
-  h.set("Access-Control-Allow-Headers", ALLOW_HEADERS);
-  h.set("Access-Control-Expose-Headers", EXPOSE_HEADERS);
+
+  // Merge baseline allow-list with whatever headers the browser requested in preflight
+  const reqAllow = req.headers.get("Access-Control-Request-Headers") || "";
+  const mergedAllow = Array.from(
+    new Set(
+      [...ALLOW_HEADERS.split(","), ...reqAllow.split(",")]
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  ).join(", ");
+  h.set("Access-Control-Allow-Headers", mergedAllow);
+
+  // Expose our standard X-* plus common response headers we use (downloads, content-type, request id)
+  const exposeBaseline = `Content-Type, Content-Disposition, X-Request-Id, ${EXPOSE_HEADERS}`;
+  const mergedExpose = Array.from(
+    new Set(
+      exposeBaseline
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  ).join(", ");
+  h.set("Access-Control-Expose-Headers", mergedExpose);
+
   h.set("Access-Control-Max-Age", "86400");
   return h;
 }

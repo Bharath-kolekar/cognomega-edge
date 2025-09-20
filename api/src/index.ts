@@ -22,6 +22,27 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { neon } from "@neondatabase/serverless";
 
+// --- Top-level CORS preflight (put before routes) ---
+const BASE_ALLOW_HEADERS = [
+  "Authorization",
+  "Content-Type",
+  "X-User-Email",
+  "x-user-email",
+  "X-Admin-Key",
+  "X-Admin-Token",
+  "X-Intelligence-Tier",
+  "x-intelligence-tier",
+];
+
+function pickAllowedOrigin(req: Request, env: any) {
+  const origin = req.headers.get("Origin") || "";
+  const allowed = (env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+  return allowed.length === 0 ? origin : allowed.includes(origin) ? origin : "";
+}
+
 // ---- Bindings & Context ----
 
 type R2Bucket = {
@@ -131,6 +152,40 @@ type CtxVars = {
 // Use Env for Bindings, keep your Variables intact
 const app = new Hono<{ Bindings: Env; Variables: CtxVars }>();
 
+app.use("*", async (c, next) => {
+  const req = c.req.raw;
+  const env = c.env;
+
+  if (req.method === "OPTIONS") {
+    const allow = pickAllowedOrigin(req, env);
+    const requested = (req.headers.get("Access-Control-Request-Headers") || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const merged = Array.from(new Set([...BASE_ALLOW_HEADERS, ...requested]));
+
+    const h = new Headers();
+    if (allow) h.set("Access-Control-Allow-Origin", allow);
+    h.set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
+    h.set("Access-Control-Allow-Credentials", "true");
+    h.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS,PATCH");
+    h.set("Access-Control-Allow-Headers", merged.join(", "));
+    h.set("Access-Control-Max-Age", "86400");
+    return new Response(null, { status: 204, headers: h });
+  }
+
+  await next();
+
+  // add CORS/expose on normal responses
+  const allow = pickAllowedOrigin(req, env);
+  if (allow) c.res.headers.set("Access-Control-Allow-Origin", allow);
+  c.res.headers.set(
+    "Access-Control-Expose-Headers",
+    "Content-Type,Content-Disposition,X-Request-Id,X-Credits-Used,X-Credits-Balance,X-Tokens-In,X-Tokens-Out,X-Provider,X-Model"
+  );
+  c.res.headers.append("Vary", "Origin");
+});
+
 // -------- CORS (strict + works for upload) --------
 
 // Allow your prod & preview origins + local dev
@@ -161,6 +216,9 @@ app.use(
       "X-User-Email",
       "X-Admin-Key",
       "X-Admin-Token",
+      // Note: preflight above already merges any requested headers like x-intelligence-tier.
+      // If you want to hard-allow it here too, uncomment the next line:
+      // "X-Intelligence-Tier",
     ],
     exposeHeaders: [
       "Content-Type",
@@ -974,7 +1032,7 @@ export default {
   fetch: (req: Request, env: Env, ctx: ExecutionContext) => app.fetch(req, env, ctx),
 
   // Cron: */5 * * * *  — kicks the queue periodically
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     // Up to 5 jobs per tick
     const makeReq = () =>
       new Request("http://internal/admin/process-one", {
