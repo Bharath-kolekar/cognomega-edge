@@ -21,3 +21,8 @@ build/
 *.env
 .env.*
 
+
+# editor backups
+*.bak
+*.bak*
+
