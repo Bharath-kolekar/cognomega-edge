@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run --outdir .wrangler/tmp/build",
     "check": "tsc --noEmit",
     "start": "node server.mjs"
   },
