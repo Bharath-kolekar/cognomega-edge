@@ -1,4 +1,4 @@
-﻿# node & tooling
+# node & tooling
 node_modules/
 dist/
 build/
@@ -21,4 +21,3 @@ build/
 *.env
 .env.*
 
-workers/auth/_incoming_*
