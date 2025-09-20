@@ -1,5 +1,5 @@
 // api/src/modules/auth_billing.ts
-// Cognomega API — Auth + Billing + Jobs + SI + Uploads (ported from cognomega-auth)
+// Cognomega API — Auth + Billing + Jobs + SI + Uploads
 // Self-contained router you can mount from api/src/index.ts without refactors.
 //
 // Handles (intentionally *not* /ready):

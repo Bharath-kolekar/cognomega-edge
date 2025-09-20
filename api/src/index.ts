@@ -1,5 +1,5 @@
 ﻿// api/src/index.ts
-// --- Auth/Billing/Jobs/AI routes (ported from cognomega-auth) ---
+// --- Auth/Billing/Jobs/AI routes ---
 import { registerAuthBillingRoutes } from "./modules/auth_billing";
 
 // If your file defines an Env type for Bindings, ensure it includes:
