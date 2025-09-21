@@ -37,6 +37,9 @@ type R2Bucket = {
   >;
 };
 
+// KV list typing (prevents implicit any recursion errors)
+type KVListResult = Awaited<ReturnType<KVNamespace["list"]>>;
+
 export interface AuthBillingEnv {
   // Vars
   ALLOWED_ORIGINS?: string;
@@ -1043,7 +1046,7 @@ export async function handleAuthBilling(
         let cursor: string | undefined = undefined;
         const prefix = `usage:${emailPrefix}`;
         outer: while (true) {
-          const list = await env.KV_BILLING.list({ prefix, cursor, limit: 1000 });
+          const list: KVListResult = await env.KV_BILLING.list({ prefix, cursor, limit: 1000 });
           for (const k of list.keys) {
             res.scanned.usage++;
             const v = await env.KV_BILLING.get(k.name);
@@ -1083,7 +1086,7 @@ export async function handleAuthBilling(
         let cursor: string | undefined = undefined;
         const prefix = `jobs:${emailPrefix}`;
         outer2: while (true) {
-          const list = await env.KV_BILLING.list({ prefix, cursor, limit: 1000 });
+          const list: KVListResult = await env.KV_BILLING.list({ prefix, cursor, limit: 1000 });
           for (const k of list.keys) {
             res.scanned.jobs_index++;
             const id = await env.KV_BILLING.get(k.name);
@@ -1172,7 +1175,7 @@ export async function handleAuthBilling(
       const safeEmail = (email || "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 64);
       const key = `uploads/${yyyy}/${mm}/${dd}/${safeEmail}/${crypto.randomUUID()}-${cleaned}`;
 
-      const putRes = await bucket.put(key, req.body as any, {
+      const putRes = await (bucket as R2Bucket).put(key, req.body as any, {
         httpMetadata: { contentType: ct },
         customMetadata: {
           uploader: email,

@@ -100,7 +100,7 @@ export interface Env {
 
   // Credits/usage pricing
   CREDIT_PER_1K?: string;        // e.g. "0.05"
-  WARN_CREDITS?: string;         // NEW: warn threshold; default 10
+  WARN_CREDITS?: string;         // warn threshold; default 10
 
   // Uploads
   MAX_UPLOAD_BYTES?: string;     // e.g. "10485760" (10MB)
@@ -319,7 +319,7 @@ const estTokens = (s: string) => Math.ceil((s || "").length / 4);
 const TOKENS_PER_CREDIT = 1000;
 const HARD_STOP_BELOW = 1;
 
-// NEW: env-driven warn credits (default 10)
+// env-driven warn credits (default 10)
 function warnCredits(env: Env): number {
   const n = Number(env.WARN_CREDITS ?? "10");
   return Number.isFinite(n) && n > 0 ? Number(n.toFixed(3)) : 10;
@@ -361,11 +361,14 @@ async function runProvider(
       },
       body: JSON.stringify(body),
     });
+
+    // Read JSON once, then throw a typed HTTPException if not ok
+    const j: any = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const detail = await r.text();
-      throw new HTTPException(r.status, { message: "groq_error", cause: detail });
+      const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
+      throw new HTTPException(502, { message: `groq_error:${r.status} ${detail}` });
     }
-    const j = await r.json();
+
     const text: string = j?.choices?.[0]?.message?.content?.toString() ?? "";
     return text.trim();
   }
@@ -391,11 +394,13 @@ async function runProvider(
       },
       body: JSON.stringify(body),
     });
+
+    const j: any = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const detail = await r.text();
-      throw new HTTPException(r.status, { message: "openai_error", cause: detail });
+      const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
+      throw new HTTPException(502, { message: `openai_error:${r.status} ${detail}` });
     }
-    const j = await r.json();
+
     const text: string = j?.choices?.[0]?.message?.content?.toString() ?? "";
     return text.trim();
   }
@@ -668,7 +673,7 @@ app.get("/api/billing/usage", async (c) => {
   const sql = sqlFor(c);
   await ensureSchema(c, sql);
   const uid = await ensureUserByEmail(sql, email);
-  const rows = await sql<any>`
+  const rows = (await sql`
     SELECT
       created_at,
       route,
@@ -681,7 +686,7 @@ app.get("/api/billing/usage", async (c) => {
     WHERE user_id = ${uid}
     ORDER BY created_at DESC
     LIMIT 50
-  `;
+  `) as any[];
   return c.json({ events: rows });
 });
 
@@ -869,7 +874,7 @@ app.get("/api/jobs/:id", async (c) => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
-  const rows = await sql<any>`SELECT * FROM job WHERE id = ${id} LIMIT 1`;
+  const rows = (await sql`SELECT * FROM job WHERE id = ${id} LIMIT 1`) as any[];
   if (!rows.length) return c.json({ error: "not_found" }, 404);
   return c.json({ job: rows[0] });
 });
@@ -894,7 +899,7 @@ app.get("/api/jobs/:id/download", async (c) => {
     )
   `;
 
-  const rows = await sql<any>`SELECT r2_url, result_text FROM job WHERE id = ${id} LIMIT 1`;
+  const rows = (await sql`SELECT r2_url, result_text FROM job WHERE id = ${id} LIMIT 1`) as any[];
   if (!rows.length) return c.json({ error: "not_found" }, 404);
 
   const { r2_url, result_text } = rows[0] ?? {};
@@ -957,12 +962,12 @@ app.post("/admin/process-one", async (c) => {
   `;
 
   // Pick oldest queued
-  const items = await sql<any>`
+  const items = (await sql`
     SELECT * FROM job
     WHERE status = 'queued'
     ORDER BY created_at ASC
     LIMIT 1
-  `;
+  `) as any[];
   const count = items.length;
   console.log(`[admin rid=${c.get("rid") || requestIdFrom(c.req.raw)}] queued=${count}`);
   if (!count) return c.json({ ok: true, processed: 0 });

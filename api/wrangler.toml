@@ -5,7 +5,7 @@ name               = "cognomega-api"
 main               = "src/index.ts"
 compatibility_date = "2025-09-03"
 workers_dev        = false
-logpush          = true   # optional (enable in CF dashboard if you want)
+logpush          = false   # optional (enable in CF dashboard if you want)
 
 # Route everything under the zone to this Worker
 routes = [
