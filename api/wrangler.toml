@@ -1,18 +1,18 @@
 ﻿# wrangler.toml — Cognomega API Worker (prod)
-# Merged from the former auth worker + current API. Routes all traffic for api.cognomega.com.
+# Routes all traffic for api.cognomega.com to a single Worker.
 
 name               = "cognomega-api"
 main               = "src/index.ts"
 compatibility_date = "2025-09-03"
 workers_dev        = false
-# logpush          = true   # optional
+logpush          = true   # optional (enable in CF dashboard if you want)
 
 # Route everything under the zone to this Worker
 routes = [
   { pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }
 ]
 
-# --- Bindings ---
+# ---------- Bindings ----------
 
 # Cloudflare Workers AI
 [ai]
@@ -24,13 +24,13 @@ binding = "AI"
 binding = "KEYS"
 id      = "7e9d002852ba44849900a2babfcaf816"
 
-# KV_BILLING: credits + usage + jobs
+# KV_BILLING: credits + usage + jobs (module-backed)
 [[kv_namespaces]]
 binding = "KV_BILLING"
 id      = "5da314a8b48b4db684678ab5ad074563"
 
 # R2 buckets
-# Keep BOTH: legacy routes may use R2 (artifacts), new module uses R2_UPLOADS.
+# Keep BOTH: legacy routes may use R2, new module uses R2_UPLOADS.
 [[r2_buckets]]
 binding     = "R2"                 # legacy artifacts bucket
 bucket_name = "cognomega-prod"
@@ -39,46 +39,44 @@ bucket_name = "cognomega-prod"
 binding     = "R2_UPLOADS"         # direct-upload bucket (auth/billing module)
 bucket_name = "cognomega-uploads"
 
-# --- Vars (non-secrets) ---
-
+# ---------- Vars (non-secrets) ----------
 [vars]
-# CORS allowlist for the module-level CORS (index.ts also handles CORS strictly).
-# Include app, marketing site, Pages prod, local dev; keep comma-separated exact origins.
+# CORS allowlist (exact origins; no wildcards).
+# Module CORS reads this env var; index.ts also sets CORS and will allow Pages previews.
 ALLOWED_ORIGINS = "https://app.cognomega.com,https://www.cognomega.com,https://cognomega.com,https://cognomega-frontend.pages.dev,http://localhost:5173,http://127.0.0.1:5173"
 
-# JWT + issuer details for guest tokens (RS256 via PRIVATE_KEY_PEM + KID).
+# JWT / issuer for guest tokens (RS256 via PRIVATE_KEY_PEM + KID)
 ISSUER      = "https://api.cognomega.com"
 JWT_TTL_SEC = "3600"
 KID         = "k1"
 
 # Billing config
-CREDIT_PER_1K   = "0.05"        # credits per 1k tokens
-MAX_UPLOAD_BYTES = "10485760"   # 10MB cap for /api/upload/direct
+CREDIT_PER_1K     = "0.05"       # credits per 1k tokens
+MAX_UPLOAD_BYTES  = "10485760"   # 10MB cap for /api/upload/direct
 
-# Provider order & model defaults for SI/LLM orchestration
+# Provider order & model defaults (SI/LLM orchestration)
 PREFERRED_PROVIDER = "groq,cfai,openai"
-
-# Model defaults
 GROQ_MODEL   = "llama-3.1-8b-instant"
 CF_AI_MODEL  = "@cf/meta/llama-3.1-8b-instruct"
 OPENAI_MODEL = "gpt-4o-mini"
 
 # Upstream base URLs (override only if needed)
 OPENAI_BASE  = "https://api.openai.com/v1"
-# GROQ_BASE  = "https://api.groq.com/openai/v1"  # default is this even if unset
+# GROQ_BASE  = "https://api.groq.com/openai/v1"  # optional override
 
-# (Optional demo/legacy DB routes in index.ts; safe to omit if unused)
+# (Optional demo/legacy DB routes used by some index.ts endpoints)
 # NEON_DATABASE_URL = "postgres://..."
 # DATABASE_URL      = "postgres://..."
 
-# --- Secrets (set via `wrangler secret put ...`) ---
-# PRIVATE_KEY_PEM     # RS256 PKCS#8 PEM used for guest JWT signing
+# ---------- Secrets (set via `npx wrangler secret put ...`) ----------
+# PRIVATE_KEY_PEM     # RS256 PKCS#8 PEM used for signed guest JWTs
 # ADMIN_API_KEY       # for /api/credits/adjust and /api/admin/* routes
 # GROQ_API_KEY        # if using Groq
 # OPENAI_API_KEY      # if using OpenAI
 # CARTESIA_API_KEY    # optional (TTS demo)
 # ADMIN_TASK_SECRET   # for internal /admin/process-one and cron trigger
+# TURNSTILE_SECRET    # (recommended) server-side Turnstile verify for uploads
 
-# --- Scheduled tasks (cron) ---
+# ---------- Scheduled tasks ----------
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *"]  # queue kicker for Neon jobs (up to 5 per tick)

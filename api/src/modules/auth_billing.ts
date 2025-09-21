@@ -72,9 +72,17 @@ export interface AuthBillingEnv {
 type Json = Record<string, unknown> | Array<unknown>;
 const enc = new TextEncoder();
 const ALLOW_HEADERS =
-  "Authorization, Content-Type, X-User-Email, x-user-email, X-Admin-Key, X-Admin-Token";
+  // include Intelligence-Tier so browser preflight passes from app
+  "Authorization, Content-Type, X-User-Email, x-user-email, X-Admin-Key, X-Admin-Token, X-Intelligence-Tier, x-intelligence-tier";
 const EXPOSE_HEADERS =
+  // base X-* we always expose (we’ll add X-Request-Id dynamically too)
   "X-Credits-Used, X-Credits-Balance, X-Tokens-In, X-Tokens-Out, X-Provider, X-Model";
+
+/* ---------------- Request ID ---------------- */
+function reqIdFrom(req: Request): string {
+  // Prefer Cloudflare Ray ID; else random UUID
+  return req.headers.get("cf-ray") || crypto.randomUUID();
+}
 
 /* ---------------- CORS helpers ---------------- */
 
@@ -132,9 +140,10 @@ function toJson(
   const h = corsHeaders(req, env);
   h.set("Content-Type", "application/json; charset=utf-8");
   h.set("Cache-Control", "no-store");
+  h.set("X-Request-Id", reqIdFrom(req));
   if (extra) {
     Object.entries(extra).forEach(([k, v]) => h.set(k, v));
-    // auto-expose any x-* we add
+    // auto-expose any x-* we add (+ always expose X-Request-Id)
     const expose = new Set(
       (h.get("Access-Control-Expose-Headers") || "")
         .split(",")
@@ -142,6 +151,7 @@ function toJson(
         .filter(Boolean)
     );
     for (const k of Object.keys(extra)) if (/^x-/i.test(k)) expose.add(k);
+    expose.add("X-Request-Id");
     if (expose.size)
       h.set("Access-Control-Expose-Headers", Array.from(expose).join(", "));
   }
@@ -149,7 +159,9 @@ function toJson(
 }
 
 function noContent(req: Request, env: AuthBillingEnv) {
-  return new Response(null, { status: 204, headers: corsHeaders(req, env) });
+  const h = corsHeaders(req, env);
+  h.set("X-Request-Id", reqIdFrom(req));
+  return new Response(null, { status: 204, headers: h });
 }
 
 /* ---------------- JWT helpers ---------------- */
@@ -655,7 +667,7 @@ export async function handleAuthBilling(
     return null;
   }
 
-  // CORS preflight — reply immediately
+  // CORS preflight — reply immediately (with request id)
   if (req.method === "OPTIONS") return noContent(req, env);
 
   try {
@@ -674,6 +686,16 @@ export async function handleAuthBilling(
       const h = corsHeaders(req, env);
       h.set("Content-Type", "application/json; charset=utf-8");
       h.set("Cache-Control", "public, max-age=300");
+      h.set("X-Request-Id", reqIdFrom(req));
+      // ensure X-Request-Id is exposed
+      const expose = new Set(
+        (h.get("Access-Control-Expose-Headers") || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      );
+      expose.add("X-Request-Id");
+      h.set("Access-Control-Expose-Headers", Array.from(expose).join(", "));
       return new Response(JSON.stringify(jwks), { status: 200, headers: h });
     }
 
@@ -1216,12 +1238,22 @@ export async function handleAuthBilling(
           )
         );
 
+        const requestId = reqIdFrom(req);
         (ctx as any).waitUntil(
-          appendUsage(env, email, "/api/si/ask", Number(out.tokens_in || 0), Number(out.tokens_out || 0), creditsUsed, {
-            provider: out.provider,
-            model: out.model,
-            skill,
-          })
+          appendUsage(
+            env,
+            email,
+            "/api/si/ask",
+            Number(out.tokens_in || 0),
+            Number(out.tokens_out || 0),
+            creditsUsed,
+            {
+              provider: out.provider,
+              model: out.model,
+              skill,
+              request_id: requestId,
+            }
+          )
             .then(() => {})
             .catch(() => {})
         );

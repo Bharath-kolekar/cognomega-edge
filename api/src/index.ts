@@ -9,7 +9,7 @@ import { registerAuthBillingRoutes } from "./modules/auth_billing";
 // R2_UPLOADS: R2Bucket;
 // And the vars used by the module (ALLOWED_ORIGINS, PRIVATE_KEY_PEM, GROQ_API_KEY, OPENAI_API_KEY,
 // ADMIN_API_KEY, JWT_TTL_SEC, KID, ISSUER, PREFERRED_PROVIDER, GROQ_MODEL, CF_AI_MODEL, OPENAI_MODEL,
-// OPENAI_BASE, GROQ_BASE, CREDIT_PER_1K, MAX_UPLOAD_BYTES).
+// OPENAI_BASE, GROQ_BASE, CREDIT_PER_1K, MAX_UPLOAD_BYTES, WARN_CREDITS).
 
 // Hono + Neon + multi-provider LLM router (Groq / Workers AI / OpenAI)
 // Billing (credits), usage feed, SI skills (sketch_to_app queue),
@@ -32,6 +32,22 @@ const BASE_ALLOW_HEADERS = [
   "X-Admin-Token",
   "X-Intelligence-Tier",
   "x-intelligence-tier",
+];
+
+// --- Request ID helpers (consistent everywhere) ---
+function requestIdFrom(req: Request): string {
+  return req.headers.get("cf-ray") || crypto.randomUUID();
+}
+const EXPOSE_ALWAYS = [
+  "Content-Type",
+  "Content-Disposition",
+  "X-Request-Id",
+  "X-Credits-Used",
+  "X-Credits-Balance",
+  "X-Tokens-In",
+  "X-Tokens-Out",
+  "X-Provider",
+  "X-Model",
 ];
 
 function pickAllowedOrigin(req: Request, env: any) {
@@ -84,6 +100,7 @@ export interface Env {
 
   // Credits/usage pricing
   CREDIT_PER_1K?: string;        // e.g. "0.05"
+  WARN_CREDITS?: string;         // NEW: warn threshold; default 10
 
   // Uploads
   MAX_UPLOAD_BYTES?: string;     // e.g. "10485760" (10MB)
@@ -147,14 +164,18 @@ type Bindings = {
 type CtxVars = {
   email?: string;
   userId?: string;
+  rid?: string;
 };
 
 // Use Env for Bindings, keep your Variables intact
 const app = new Hono<{ Bindings: Env; Variables: CtxVars }>();
 
+// -------- Global middleware: Preflight + CORS + Request ID --------
 app.use("*", async (c, next) => {
   const req = c.req.raw;
   const env = c.env;
+  const rid = requestIdFrom(req);
+  c.set("rid", rid);
 
   if (req.method === "OPTIONS") {
     const allow = pickAllowedOrigin(req, env);
@@ -171,19 +192,33 @@ app.use("*", async (c, next) => {
     h.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS,PATCH");
     h.set("Access-Control-Allow-Headers", merged.join(", "));
     h.set("Access-Control-Max-Age", "86400");
+    h.set("X-Request-Id", rid);
+    // Expose standard headers (no harm on preflight)
+    h.set("Access-Control-Expose-Headers", EXPOSE_ALWAYS.join(", "));
     return new Response(null, { status: 204, headers: h });
   }
 
   await next();
 
-  // add CORS/expose on normal responses
+  // Add CORS on normal responses
   const allow = pickAllowedOrigin(req, env);
   if (allow) c.res.headers.set("Access-Control-Allow-Origin", allow);
-  c.res.headers.set(
-    "Access-Control-Expose-Headers",
-    "Content-Type,Content-Disposition,X-Request-Id,X-Credits-Used,X-Credits-Balance,X-Tokens-In,X-Tokens-Out,X-Provider,X-Model"
-  );
   c.res.headers.append("Vary", "Origin");
+
+  // Ensure X-Request-Id is present; preserve if already set (e.g., module)
+  if (!c.res.headers.get("X-Request-Id")) {
+    c.res.headers.set("X-Request-Id", rid);
+  }
+
+  // Merge expose headers (never clobber what a route already set)
+  const currentExpose = (c.res.headers.get("Access-Control-Expose-Headers") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const mergedExpose = Array.from(new Set([...currentExpose, ...EXPOSE_ALWAYS]));
+  if (mergedExpose.length) {
+    c.res.headers.set("Access-Control-Expose-Headers", mergedExpose.join(", "));
+  }
 });
 
 // -------- CORS (strict + works for upload) --------
@@ -216,30 +251,19 @@ app.use(
       "X-User-Email",
       "X-Admin-Key",
       "X-Admin-Token",
-      // Note: preflight above already merges any requested headers like x-intelligence-tier.
-      // If you want to hard-allow it here too, uncomment the next line:
-      // "X-Intelligence-Tier",
+      // "X-Intelligence-Tier", // requested headers get merged by the preflight above
     ],
-    exposeHeaders: [
-      "Content-Type",
-      "Content-Disposition",
-      "X-Credits-Used",
-      "X-Credits-Balance",
-      "X-Request-Id",
-      "X-Tokens-In",
-      "X-Tokens-Out",
-      "X-Provider",
-      "X-Model",
-    ],
+    exposeHeaders: EXPOSE_ALWAYS,
     maxAge: 86400,
-    credentials: true, // some callers use credentials:"include"
+    credentials: true,
   })
 );
 
-// Explicit preflight responder (runs before route auth)
+// Explicit preflight responder (kept; adds Request Id too)
 app.options("*", (c) => {
   const origin = c.req.header("Origin") || "";
   const acrh = c.req.header("Access-Control-Request-Headers") || "";
+  const rid = c.get("rid") || requestIdFrom(c.req.raw);
   const headers = new Headers();
   headers.set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
   headers.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
@@ -249,6 +273,8 @@ app.options("*", (c) => {
   );
   headers.set("Access-Control-Max-Age", "86400");
   headers.set("Access-Control-Allow-Credentials", "true");
+  headers.set("Access-Control-Expose-Headers", EXPOSE_ALWAYS.join(", "));
+  headers.set("X-Request-Id", String(rid));
   if (isAllowed(origin)) headers.set("Access-Control-Allow-Origin", origin);
   return new Response(null, { status: 204, headers });
 });
@@ -268,6 +294,7 @@ app.get("/.well-known/jwks.json", async (c) => {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "public, max-age=300",
+      // X-Request-Id will be added by post-route middleware
     },
   });
 });
@@ -290,8 +317,13 @@ const estTokens = (s: string) => Math.ceil((s || "").length / 4);
 
 // Pricing (credits)
 const TOKENS_PER_CREDIT = 1000;
-const WARN_CREDITS = 10;
 const HARD_STOP_BELOW = 1;
+
+// NEW: env-driven warn credits (default 10)
+function warnCredits(env: Env): number {
+  const n = Number(env.WARN_CREDITS ?? "10");
+  return Number.isFinite(n) && n > 0 ? Number(n.toFixed(3)) : 10;
+}
 
 // -------- LLM router --------
 function defaultModel(provider: string) {
@@ -572,10 +604,11 @@ app.post("/v1/files/upload", async (c) => {
   `;
 
   // 5) Eager background trigger (internal-only). Cron remains as fallback.
+  const rid = (c.get("rid") as string) || requestIdFrom(c.req.raw);
   c.executionCtx.waitUntil(
     (async () => {
       try {
-        console.log(`[trigger] internal start job_id=${jobId}`);
+        console.log(`[trigger rid=${rid}] internal start job_id=${jobId}`);
         const resp = await app.fetch(
           new Request("http://internal/admin/process-one", {
             method: "POST",
@@ -584,9 +617,9 @@ app.post("/v1/files/upload", async (c) => {
           c.env as any,
           c.executionCtx as any
         );
-        console.log(`[trigger] internal status=${resp.status}`);
+        console.log(`[trigger rid=${rid}] internal status=${resp.status}`);
       } catch (e) {
-        console.log(`[trigger] internal error=${String(e)}`);
+        console.log(`[trigger rid=${rid}] internal error=${String(e)}`);
       }
     })()
   );
@@ -617,7 +650,7 @@ app.get("/api/billing/balance", async (c) => {
   await ensureSchema(c, sql);
   const uid = await ensureUserByEmail(sql, email);
   const bal = await getBalance(sql, uid);
-  return c.json({ balance: bal, warn_credits: WARN_CREDITS });
+  return c.json({ balance: bal, warn_credits: warnCredits(c.env) });
 });
 
 // alias: older UI calls /api/credits
@@ -627,7 +660,7 @@ app.get("/api/credits", async (c) => {
   await ensureSchema(c, sql);
   const uid = await ensureUserByEmail(sql, email);
   const bal = await getBalance(sql, uid);
-  return c.json({ balance: bal, warn_credits: WARN_CREDITS });
+  return c.json({ balance: bal, warn_credits: warnCredits(c.env) });
 });
 
 app.get("/api/billing/usage", async (c) => {
@@ -653,10 +686,18 @@ app.get("/api/billing/usage", async (c) => {
 });
 
 // aliases for usage (older UI variations)
-app.get("/api/v1/billing/usage", (c) => app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as any, c.executionCtx as any));
-app.get("/billing/usage", (c) => app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any));
-app.get("/api/usage", (c) => app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any));
-app.get("/usage", (c) => app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any));
+app.get("/api/v1/billing/usage", (c) =>
+  app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as any, c.executionCtx as any)
+);
+app.get("/billing/usage", (c) =>
+  app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+);
+app.get("/api/usage", (c) =>
+  app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+);
+app.get("/usage", (c) =>
+  app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+);
 
 // -------- SI skills (with queue path) --------
 app.post("/api/si/ask", async (c) => {
@@ -675,7 +716,7 @@ app.post("/api/si/ask", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const skill: string = String(body?.skill || "").trim();
   const input: string = String(body?.input || "").trim();
-  const requestId = crypto.randomUUID();
+  const requestId = (c.get("rid") as string) || requestIdFrom(c.req.raw);
 
   // Queueable skill
   if (skill === "sketch_to_app") {
@@ -708,7 +749,7 @@ app.post("/api/si/ask", async (c) => {
     c.executionCtx.waitUntil(
       (async () => {
         try {
-          console.log(`[trigger] internal start job_id=${jobId}`);
+          console.log(`[trigger rid=${requestId}] internal start job_id=${jobId}`);
           const resp = await app.fetch(
             new Request("http://internal/admin/process-one", {
               method: "POST",
@@ -717,14 +758,16 @@ app.post("/api/si/ask", async (c) => {
             c.env as any,
             c.executionCtx as any
           );
-          console.log(`[trigger] internal status=${resp.status}`);
+          console.log(`[trigger rid=${requestId}] internal status=${resp.status}`);
         } catch (e) {
-          console.log(`[trigger] internal error=${String(e)}`);
+          console.log(`[trigger rid=${requestId}] internal error=${String(e)}`);
         }
       })()
     );
 
     c.header("X-Job-Id", jobId);
+    // Ensure canonical casing:
+    c.header("X-Request-Id", requestId);
     return c.json({ ok: true, job_id: jobId, status: "queued" }, 202);
   }
 
@@ -792,7 +835,7 @@ app.post("/api/si/ask", async (c) => {
   `;
 
   const newBal = await getBalance(sql, userId);
-  c.header("X-Request-ID", requestId);
+  c.header("X-Request-Id", requestId);          // unified casing
   c.header("X-Credits-Used", String(cost));
   c.header("X-Credits-Balance", String(newBal));
 
@@ -866,6 +909,7 @@ app.get("/api/jobs/:id/download", async (c) => {
           "content-type": ct,
           "content-disposition": `attachment; filename="${fname}"`,
           "cache-control": "no-store",
+          // X-Request-Id added by post-route middleware
         },
       });
     }
@@ -920,7 +964,7 @@ app.post("/admin/process-one", async (c) => {
     LIMIT 1
   `;
   const count = items.length;
-  console.log(`[admin] queued=${count}`);
+  console.log(`[admin rid=${c.get("rid") || requestIdFrom(c.req.raw)}] queued=${count}`);
   if (!count) return c.json({ ok: true, processed: 0 });
 
   const j = items[0];
@@ -973,8 +1017,62 @@ ${spec.slice(0, 200)}
     WHERE id = ${j.id}
   `;
 
-  console.log(`[admin] processed job_id=${j.id}`);
+  console.log(`[admin rid=${c.get("rid") || requestIdFrom(c.req.raw)}] processed job_id=${j.id}`);
   return c.json({ ok: true, job_id: j.id, status: "done", r2_key: r2Key ?? undefined });
+});
+
+// -------- Admin: env snapshot (NEW) --------
+// GET /api/admin/env-snapshot  (X-Admin-Key must equal ADMIN_API_KEY)
+app.get("/api/admin/env-snapshot", (c) => {
+  const k = (c.req.header("x-admin-key") || c.req.header("x-admin-token") || "").trim();
+  if (!c.env.ADMIN_API_KEY || k !== c.env.ADMIN_API_KEY) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  const vars = {
+    ALLOWED_ORIGINS: c.env.ALLOWED_ORIGINS || "",
+    ISSUER: c.env.ISSUER || "",
+    JWT_TTL_SEC: c.env.JWT_TTL_SEC || "",
+    KID: c.env.KID || "",
+    CREDIT_PER_1K: c.env.CREDIT_PER_1K || "",
+    MAX_UPLOAD_BYTES: c.env.MAX_UPLOAD_BYTES || "",
+    WARN_CREDITS: String(warnCredits(c.env)),
+    PREFERRED_PROVIDER: c.env.PREFERRED_PROVIDER || "",
+    GROQ_MODEL: c.env.GROQ_MODEL || "",
+    CF_AI_MODEL: c.env.CF_AI_MODEL || "",
+    OPENAI_MODEL: c.env.OPENAI_MODEL || "",
+    OPENAI_BASE: c.env.OPENAI_BASE || "",
+    GROQ_BASE: c.env.GROQ_BASE || "",
+  };
+
+  const secrets = {
+    PRIVATE_KEY_PEM: !!c.env.PRIVATE_KEY_PEM,
+    GROQ_API_KEY: !!c.env.GROQ_API_KEY,
+    OPENAI_API_KEY: !!c.env.OPENAI_API_KEY,
+    ADMIN_API_KEY: !!c.env.ADMIN_API_KEY,
+    ADMIN_KEY: !!c.env.ADMIN_KEY, // operator key for /admin/process-one
+    ADMIN_TASK_SECRET: !!c.env.ADMIN_TASK_SECRET,
+    CARTESIA_API_KEY: !!c.env.CARTESIA_API_KEY,
+    DATABASE_URL: !!c.env.DATABASE_URL,
+    NEON_DATABASE_URL: !!c.env.NEON_DATABASE_URL,
+  };
+
+  const bindings = {
+    AI: !!c.env.AI,
+    KEYS: !!c.env.KEYS,
+    KV_BILLING: !!c.env.KV_BILLING,
+    R2: !!(c.env as any).R2,
+    R2_UPLOADS: !!(c.env as any).R2_UPLOADS,
+  };
+
+  return c.json({
+    ok: true,
+    at: nowIso(),
+    note: "Secrets are boolean flags (set/unset). No secret values are returned.",
+    vars,
+    secrets,
+    bindings,
+  });
 });
 
 // -------- TTS: Cartesia proxy (batch + realtime token) --------
@@ -998,18 +1096,10 @@ app.post("/api/tts/cartesia/batch", async (c) => {
 
   // Not configured yet? Return a clean capability signal.
   if (!key) {
-    // Tell the browser we acknowledge the route but it’s not wired yet.
     return c.json({ error: "cartesia_unconfigured" }, 501);
   }
 
-  // TODO: Wire real Cartesia call here:
-  // - Construct request with API key
-  // - Choose voice/model from `voice`/defaults
-  // - Request MP3/WAV bytes
-  // - Stream back with audio/* content-type
-  //
-  // For safety (no hallucinated upstream), we provide a friendly 501 until you paste the
-  // official call. This keeps the client happy (it will fall back to dummy speech).
+  // TODO: Wire real Cartesia call here (intentionally left 501)
   return c.json({ error: "cartesia_not_implemented_yet" }, 501);
 });
 
@@ -1021,8 +1111,7 @@ app.get("/api/tts/cartesia/realtime-token", async (c) => {
   const key = c.env.CARTESIA_API_KEY || "";
   if (!key) return c.json({ error: "cartesia_unconfigured" }, 501);
 
-  // TODO: Exchange for a short-lived token / WebRTC credentials (provider-specific).
-  // Until that is set up, respond with 501 so the client falls back.
+  // TODO: Exchange for a short-lived token / WebRTC credentials
   return c.json({ error: "cartesia_realtime_unavailable" }, 501);
 });
 
@@ -1040,15 +1129,13 @@ export default {
         headers: { "x-admin-task": env.ADMIN_TASK_SECRET || "" },
       });
 
-    ctx.waitUntil(
-      (async () => {
-        for (let i = 0; i < 5; i++) {
-          const resp = await app.fetch(makeReq(), env as any, ctx as any);
-          if (!resp.ok) break;
-          const text = await resp.text().catch(() => "");
-          if (text.includes('"processed":0')) break; // nothing to do
-        }
-      })()
-    );
+    await (async () => {
+      for (let i = 0; i < 5; i++) {
+        const resp = await app.fetch(makeReq(), env as any, ctx as any);
+        if (!resp.ok) break;
+        const text = await resp.text().catch(() => "");
+        if (text.includes('"processed":0')) break; // nothing to do
+      }
+    })();
   },
 };
