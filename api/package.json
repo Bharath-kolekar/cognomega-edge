@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
     "deploy": "wrangler deploy",
+    "deploy:dry": "wrangler deploy --dry-run --outdir .wrangler/tmp/build",
     "build": "wrangler deploy --dry-run --outdir .wrangler/tmp/build",
+    "tail": "wrangler tail --format=pretty",
     "check": "tsc --noEmit",
     "start": "node server.mjs"
   },
@@ -20,6 +24,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240925.0",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "wrangler": "^4.38.0"
   }
 }
