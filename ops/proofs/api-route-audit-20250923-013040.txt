@@ -1,0 +1,8 @@
+When: 20250923-013040 UTC
+URL:  https://api.cognomega.com
+
+JWKS (first 120 chars):
+{"keys":[{"kty":"RSA","n":"uZ2fMBEuwRlnwbtbPobzHiedNjOZHf-SfPa7ZaT9BuBS-UBCkrxkHILXQSPBJ-j6d1E44WzJfYn3Bn7Vve0VRkyZrE1bm
+
+AI Binding JSON (first 120 chars):
+{"ai_bound":true}

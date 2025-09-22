@@ -5,7 +5,7 @@ name               = "cognomega-api"
 main               = "src/index.ts"
 compatibility_date = "2025-09-03"
 workers_dev        = false
-logpush          = false   # optional (enable in CF dashboard if you want)
+logpush            = false   # optional (enable in CF dashboard if you want)
 
 # Route everything under the zone to this Worker
 routes = [
@@ -45,6 +45,8 @@ bucket_name = "cognomega-uploads"
 # Module CORS reads this env var; index.ts also sets CORS and will allow Pages previews.
 ALLOWED_ORIGINS = "https://app.cognomega.com,https://www.cognomega.com,https://cognomega.com,https://cognomega-frontend.pages.dev,http://localhost:5173,http://127.0.0.1:5173"
 WARN_CREDITS = "5"
+USAGE_TTL_DAYS = "30"
+JOB_TTL_DAYS   = "14"
 
 # JWT / issuer for guest tokens (RS256 via PRIVATE_KEY_PEM + KID)
 ISSUER      = "https://api.cognomega.com"

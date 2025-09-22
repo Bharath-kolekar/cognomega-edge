@@ -87,15 +87,40 @@ function reqIdFrom(req: Request): string {
   return req.headers.get("cf-ray") || crypto.randomUUID();
 }
 
-/* ---------------- CORS helpers ---------------- */
-
-function corsHeaders(req: Request, env: AuthBillingEnv): Headers {
+/* ---------------- Origin allow rules (match index.ts) ---------------- */
+/**
+ * We mirror the unified origin logic from api/src/index.ts so the module’s
+ * responses stay consistent even if they set headers directly.
+ * Priority:
+ * 1) Exact match from ALLOWED_ORIGINS (comma-separated)
+ * 2) Stable Pages domain + preview subdomains
+ * 3) Local dev (5173)
+ * 4) If ALLOWED_ORIGINS is empty, allow same-origin (rare)
+ */
+function pickAllowedOrigin(req: Request, env: AuthBillingEnv): string {
   const origin = req.headers.get("Origin") || "";
+  if (!origin) return "";
+
   const allowed = (env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const allow = allowed.length === 0 ? origin : allowed.includes(origin) ? origin : "";
+
+  if (allowed.includes(origin)) return origin;
+
+  const pagesStable = "https://cognomega-frontend.pages.dev";
+  const pagesPreview = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/;
+
+  if (origin === pagesStable || pagesPreview.test(origin)) return origin;
+  if (origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173") return origin;
+  if (allowed.length === 0) return origin;
+
+  return "";
+}
+
+/* ---------------- CORS helpers ---------------- */
+function corsHeaders(req: Request, env: AuthBillingEnv): Headers {
+  const allow = pickAllowedOrigin(req, env);
 
   const h = new Headers();
   if (allow) h.set("Access-Control-Allow-Origin", allow);

@@ -15,10 +15,9 @@ import { registerAuthBillingRoutes } from "./modules/auth_billing";
 // Billing (credits), usage feed, SI skills (sketch_to_app queue),
 // admin processor (uploads artifact to R2), job download.
 // Immediate background trigger after enqueue (internal-only) + cron fallback.
-// STRICT CORS: explicit methods/headers/expose + OPTIONS * handler.
+// STRICT CORS: single env-driven layer (preflight + response), no duplicates.
 
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { neon } from "@neondatabase/serverless";
 
@@ -50,13 +49,37 @@ const EXPOSE_ALWAYS = [
   "X-Model",
 ];
 
+/**
+ * Unified origin allow-list:
+ * - Exact matches from ALLOWED_ORIGINS (comma-separated)
+ * - Stable Pages domain + preview subdomains
+ * - Local dev origins
+ */
 function pickAllowedOrigin(req: Request, env: any) {
   const origin = req.headers.get("Origin") || "";
+  if (!origin) return "";
+
+  // 1) Explicit allow-list from env
   const allowed = (env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((s: string) => s.trim())
     .filter(Boolean);
-  return allowed.length === 0 ? origin : allowed.includes(origin) ? origin : "";
+
+  if (allowed.includes(origin)) return origin;
+
+  // 2) Pages stable + preview subdomains
+  const pagesStable = "https://cognomega-frontend.pages.dev";
+  const pagesPreview = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/;
+
+  if (origin === pagesStable || pagesPreview.test(origin)) return origin;
+
+  // 3) Local dev
+  if (origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173") return origin;
+
+  // 4) If ALLOWED_ORIGINS is intentionally empty, allow same-origin (rare)
+  if (allowed.length === 0) return origin;
+
+  return "";
 }
 
 // ---- Bindings & Context ----
@@ -219,64 +242,6 @@ app.use("*", async (c, next) => {
   if (mergedExpose.length) {
     c.res.headers.set("Access-Control-Expose-Headers", mergedExpose.join(", "));
   }
-});
-
-// -------- CORS (strict + works for upload) --------
-
-// Allow your prod & preview origins + local dev
-const allowedOrigins = [
-  "https://app.cognomega.com",
-  "https://cognomega-frontend.pages.dev", // stable Pages domain
-  /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/, // preview hashes
-  "https://www.cognomega.com",
-  "https://cognomega.com",
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-];
-
-const isAllowed = (origin?: string | null) =>
-  !!origin && allowedOrigins.some((o) => (typeof o === "string" ? o === origin : o.test(origin!)));
-
-// Primary CORS middleware (adds headers on non-OPTIONS too)
-app.use(
-  "*",
-  cors({
-    origin: (origin) => (isAllowed(origin) ? origin! : ""), // empty => no ACAO header
-    allowMethods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: [
-      "Authorization",
-      "Content-Type",
-      "Accept",
-      "CF-Turnstile-Token",
-      "X-User-Email",
-      "X-Admin-Key",
-      "X-Admin-Token",
-      // "X-Intelligence-Tier", // requested headers get merged by the preflight above
-    ],
-    exposeHeaders: EXPOSE_ALWAYS,
-    maxAge: 86400,
-    credentials: true,
-  })
-);
-
-// Explicit preflight responder (kept; adds Request Id too)
-app.options("*", (c) => {
-  const origin = c.req.header("Origin") || "";
-  const acrh = c.req.header("Access-Control-Request-Headers") || "";
-  const rid = c.get("rid") || requestIdFrom(c.req.raw);
-  const headers = new Headers();
-  headers.set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
-  headers.set("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
-  headers.set(
-    "Access-Control-Allow-Headers",
-    acrh || "Authorization,Content-Type,Accept,CF-Turnstile-Token,X-User-Email,X-Admin-Key,X-Admin-Token"
-  );
-  headers.set("Access-Control-Max-Age", "86400");
-  headers.set("Access-Control-Allow-Credentials", "true");
-  headers.set("Access-Control-Expose-Headers", EXPOSE_ALWAYS.join(", "));
-  headers.set("X-Request-Id", String(rid));
-  if (isAllowed(origin)) headers.set("Access-Control-Allow-Origin", origin);
-  return new Response(null, { status: 204, headers });
 });
 
 // 1) Workers AI binding probe (used for sanity checks)
@@ -518,7 +483,7 @@ async function getBalance(sql: any, userId: string): Promise<number> {
 }
 
 function creditsForTokens(tokensIn: number, tokensOut: number) {
-  const t = (tokensIn + tokensOut) / TOKENS_PER_CREDIT;
+  const t = (tokensIn + tokensOut) / 1000;
   return Number(t.toFixed(3));
 }
 
@@ -1119,7 +1084,6 @@ app.get("/api/tts/cartesia/realtime-token", async (c) => {
   // TODO: Exchange for a short-lived token / WebRTC credentials
   return c.json({ error: "cartesia_realtime_unavailable" }, 501);
 });
-
 
 // -------- Export CF Worker entrypoints --------
 export default {
