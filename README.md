@@ -385,3 +385,85 @@ Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/cleanup' -Method POS
 ```
 
 ---
+---
+
+# API Contract & Operator Probes (Production)
+
+This project exposes **one** authentication endpoint and **one** JWKS endpoint in production:
+
+- **`POST /auth/guest`** — issues **RS256** guest JWTs (signed using `PRIVATE_KEY_PEM`, **PKCS#8**).  
+- **`GET /.well-known/jwks.json`** — JWKS used to verify tokens issued by `/auth/guest`.
+
+### CORS & Exposed Headers (stable)
+
+Frontend clients can rely on the following response headers being **exposed** (readable via `fetch`):
+
+- `Content-Type`
+- `Content-Disposition`
+- `X-Request-Id`
+- `X-Credits-Used`
+- `X-Credits-Balance`
+- `X-Tokens-In`
+- `X-Tokens-Out`
+- `X-Provider`
+- `X-Model`
+
+**Preflight** (`OPTIONS`) merges the browser’s `Access-Control-Request-Headers` with the base allow-list. Ensure `ALLOWED_ORIGINS` contains your app origin(s).
+
+### Billing/Usage Source of Truth (today)
+
+- **KV** is the canonical storage for **credits**, **usage**, and **jobs**:
+  - `KEYS` KV: serves JWKS at `/.well-known/jwks.json` (key: `jwks`).
+  - `KV_BILLING` KV: `balance:*`, `usage:*`, and `jobs:*` keys.
+- A future **Neon** migration is tracked for analytics/reporting only; production billing remains in **KV** until the cutover plan is approved.
+
+### Operator Probes (summary)
+
+> Full details and acceptance checklist live in `OPS.md`. Use these quick probes for smoke checks.
+
+**Preflight (CORS)**
+
+```powershell
+curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask" ^
+  -H "Origin: https://app.cognomega.com" ^
+  -H "Access-Control-Request-Method: POST" ^
+  -H "Access-Control-Request-Headers: content-type, x-user-email, x-intelligence-tier"
+```
+
+**JWKS (first 120 chars)**
+
+```powershell
+$jwks = Invoke-WebRequest -UseBasicParsing "https://api.cognomega.com/.well-known/jwks.json"
+$jwks.Content.Substring(0, [Math]::Min(120, $jwks.Content.Length))
+```
+
+**AI binding**
+
+```powershell
+Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding"
+# -> { "ai_bound": true }
+```
+
+**Guest token (RS256)**
+
+```powershell
+$g = Invoke-RestMethod -Method POST -Uri "https://api.cognomega.com/auth/guest"
+$tok = $g.token
+```
+
+### Route Ownership (guardrail)
+
+- Cloudflare Worker: **`cognomega-api`** is the **only** worker with a route matching `api.cognomega.com/*`.
+- `api/wrangler.toml` declares exactly one zone route:
+  ```toml
+  routes = [
+    { pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }
+  ]
+  ```
+
+### Change Management (GitHub-only)
+
+- All doc/code changes (including `OPS.md` and `wrangler.toml`) land via **PR to `main`**.
+- No direct CF changes without a corresponding Git commit. If routes/DNS change, attach a fresh **route audit** proof to `ops/proofs/`.
+
+---
