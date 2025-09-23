@@ -282,6 +282,60 @@ function warnCredits(env: Env): number {
   return Number.isFinite(n) && n > 0 ? Number(n.toFixed(3)) : 10;
 }
 
+type BalanceLike = number | { [key: string]: unknown } | null | undefined;
+
+function parseBalance(raw: BalanceLike): number {
+  const toFinite = (value: unknown): number | null => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "bigint") return Number(value);
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
+
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    for (const key of ["balance_credits", "balance", "credits", "available"]) {
+      if (key in obj) {
+        const parsed = toFinite(obj[key]);
+        if (parsed != null) return parsed;
+      }
+    }
+  }
+
+  const fallback = toFinite(raw);
+  return fallback ?? 0;
+}
+
+function balanceResponse(raw: BalanceLike, env: Env) {
+  const balance = parseBalance(raw);
+  const payload: {
+    balance: number;
+    balance_credits: number;
+    warn_credits: number;
+    updated_at?: string;
+  } = {
+    balance,
+    balance_credits: balance,
+    warn_credits: warnCredits(env),
+  };
+
+  if (raw && typeof raw === "object") {
+    const updatedAt = (raw as Record<string, unknown>).updated_at;
+    if (typeof updatedAt === "string" && updatedAt.trim()) {
+      payload.updated_at = updatedAt;
+    }
+  }
+
+  return payload;
+}
+
 // -------- LLM router --------
 function defaultModel(provider: string) {
   if (provider === "groq") return "llama-3.1-8b-instant";
@@ -612,7 +666,7 @@ app.get("/api/billing/balance", async (c) => {
   await ensureSchema(c, sql);
   const uid = await ensureUserByEmail(sql, email);
   const bal = await getBalance(sql, uid);
-  return c.json({ balance: bal, warn_credits: warnCredits(c.env) });
+  return c.json(balanceResponse(bal, c.env));
 });
 
 // alias: older UI calls /api/credits
@@ -622,7 +676,7 @@ app.get("/api/credits", async (c) => {
   await ensureSchema(c, sql);
   const uid = await ensureUserByEmail(sql, email);
   const bal = await getBalance(sql, uid);
-  return c.json({ balance: bal, warn_credits: warnCredits(c.env) });
+  return c.json(balanceResponse(bal, c.env));
 });
 
 app.get("/api/billing/usage", async (c) => {
