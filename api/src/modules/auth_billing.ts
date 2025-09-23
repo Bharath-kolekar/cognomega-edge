@@ -304,6 +304,9 @@ function getCallerEmail(req: Request): string | null {
 /* ---------------- Credits + Usage + Jobs ---------------- */
 
 type BalanceRow = { balance_credits: number; updated_at: string };
+function balanceRowWithExtras(
+  row: BalanceRow,
+  extras: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
     ...extras,
@@ -361,14 +364,7 @@ async function adjustBalance(
 
 /** Standardized balance JSON used across endpoints (keeps README contract). */
 function balancePayload(row: BalanceRow, email?: string) {
-  return {
-    ...(email ? { email } : {}),
-    balance_credits: row.balance_credits,
-    updated_at: row.updated_at,
-    // aliases kept for back-compat / docs parity
-    credits: row.balance_credits,
-    updated: row.updated_at,
-  };
+  return balanceRowWithExtras(row, email ? { email } : {});
 }
 
 type UsageEvent = {
@@ -733,13 +729,15 @@ export async function handleAuthBilling(
       return toJson(balancePayload(row, email), req, env, 200);
     }
 
-    // ---- Credits (GET returns balance payload; POST adjust returns same shape)    if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
+    // ---- Credits (GET returns balance payload; POST adjust returns same shape)
+    if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
       if (req.method !== "GET")
         return toJson({ error: "method_not_allowed" }, req, env, 405);
       const email = getCallerEmail(req);
       if (!email) return toJson({ error: "missing_email" }, req, env, 400);
       const row = await getBalance(env, email);
-      return toJson(balancePayload(row, email), req, env, 200);    }
+      return toJson(balancePayload(row, email), req, env, 200);
+    }
 
     if (p === "/api/credits/adjust") {
       if (req.method !== "POST")
