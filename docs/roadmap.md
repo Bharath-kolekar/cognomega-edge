@@ -1,99 +1,226 @@
-# Cognomega — Major Roadmap (Microservices, Cost-Efficient, Global Scale)
+# Cognomega — Major Roadmap (Single Source of Truth)
 
-Status: SOURCE OF TRUTH  
-Last updated: 2025-09-23 (IST)
+> **Principles**
+> - **Microservices, not monoliths** (Cloudflare Workers + KV/R2/Queues + Neon).
+> - **GitHub-only deploys** to `main` (no direct CF edits).
+> - **One API route owner** for `api.cognomega.com/*` (`cognomega-api` Worker).
+> - **KV is the source of truth** for credits/usage/jobs (Neon rollup later).
+> - **Voice-first, AI-first** creation & operations.
+> - **PowerShell-only ops commands** in docs.
+> - **All changes carry proofs** (OPS route audit, CORS/JWKS/AI probes).
+> - **Service Bindings for scale** — public **gateway** calls internal workers; internal workers have **no public routes**.
 
-## Principles
-- Cloudflare-first edge architecture (Workers, Service Bindings, KV, Queues, R2, DOs).
-- Keep **Neon** as authoritative ledger/analytics; keep **Cartesia** for TTS.
-- Single public hostname `https://api.cognomega.com` with **one** owning Worker route.
-- No monolith; each capability promotes to a Worker microservice.
-- Async writes via Queues; **KV** for hot reads; **Neon** for source-of-truth.
-- Production guardrails: **CORS single layer**, RS256 guest auth, JWKS in KV, headers exposed.
-- GitHub-only deploys to prod; no CF preview until issues are closed.
+This roadmap maps to `docs/tasks.md` task IDs and defines **milestones**, **acceptance gates**, and **risk controls**. Treat it as the canonical plan document.
 
-## Phase 0 — Stabilize & Prove (Now → 2 weeks)
-**Goals**
-- Single route owner verified (`cognomega-api` only).
-- CORS/headers consistent (preflight 204; exposed headers stable).
-- Auth: RS256 `/auth/guest`; JWKS served from KV.
-- Documentation baseline (OPS updated, Route Audit capture routine).
+---
 
-**Deliverables**
-- ✅ `OPS.md` updated with Route Ownership Audit & capture steps.
-- ✅ `wrangler.toml` with single route; no shadow functions.
-- ✅ Preflight proof and `ai_bound: true` proof captured.
-- ✅ README segment (to be merged) clarifies **one** `/auth/guest` and JWKS.
+## 0) Stabilization (Continuous)
 
-**Acceptance**
-- Preflight returns 204 with allow/expose headers.
-- `GET /api/ai/binding` → `{ "ai_bound": true }`.
-- `.well-known/jwks.json` returns `keys[]`.
-- Only one Worker owns `api.cognomega.com/*`.
+**Objective**: Keep production stable and consistent while we build.
 
-## Phase 1 — Split Hot Paths (2–4 weeks)
-**Goals**
-- Introduce **usage-svc** (ingress API → Queue → writer) and **billing-svc** (KV cache + Neon ledger).
-- Gateway (public API Worker) forwards to services via **Service Bindings**.
-- Keep public URLs unchanged.
+- Route ownership: `api.cognomega.com/*` → `cognomega-api` only (no Pages or other Worker collisions).
+- JWKS & RS256 guest tokens verified (`/.well-known/jwks.json`, `/auth/guest`).
+- CORS headers stable; SI exposed billing headers readable by frontend.
+- GitHub-only; any route/DNS change requires proofs in `ops/proofs/`.
 
-**Deliverables**
-- Workers: `usage-svc`, `usage-writer`, `billing-svc`.
-- KV keys: `balance:{email}`, `usage:{email}:{revTs}:{id}` (compat).
-- Admin: `/admin/env-snapshot` and cleanup retained.
+**Acceptance gates**
+- OPS probes pass: **Preflight**, **JWKS head**, **AI binding**, **`/auth/guest` RS256**.
+- `git status` clean; no dev artifacts tracked.
+- `api/wrangler.toml` has exactly **one** `routes` entry for the API hostname.
+- Proof file committed for each routing/headers change (`ops/proofs/*.txt`).
 
-**Acceptance**
-- `/api/si/ask` end-to-end latency stable under load (usage write async).
-- `/api/credits` served from KV, consistent with Neon after write.
-- Back-pressure via Queues validated.
+**Linked tasks**: TSK-P-1, TSK-C-1…C-4.
 
-## Phase 2 — Functional Extraction (3–6 weeks)
-**Goals**
-- Extract `auth-svc`, `files-svc` (R2), `orchestrator-svc` (LLM routing), `admin-svc`.
-- Introduce **per-user rate limiter** via Durable Object at the Gateway.
+**SLO guardrails**
+- p95 preflight < **100 ms**; p95 `/api/si/ask` < **1.2 s** via Workers AI route.
 
-**Deliverables**
-- Workers: `auth-svc`, `files-svc`, `orchestrator-svc`, `admin-svc`, `rate-limiter-do`.
-- Service map documented; bindings wired in Gateway.
+---
+
+## Phase A — Differentiators (Ship first)
+
+### A1. App Graph + Scaffold (TSK-A-1, P0)
+**Outcome**: A structured **App Graph** (pages, components, services, data models, queues, routes) that can generate a **microservices scaffold** with CF Workers + Neon migrations + CI boilerplate.
+
+**Scope**
+- `tools/app-graph/schema.json`
+- `api/src/services/scaffold/*`
+- Templates under `/templates/` (React + shadcn/ui, Hono, Neon, Worker service bindings)
 
 **Acceptance**
-- All public routes continue to work with stable headers.
-- Rate-limits enforce tenant budgets without false positives.
+- `POST /api/scaffold` returns an artifact (R2) and a **PR to `main`** with generated files.
+- Generated `wrangler.toml` per service: **single explicit route**, no collisions.
+- OPS probes pass on the generated service (route audit, CORS, JWKS if applicable).
 
-## Phase 3 — Jobs & Voice (4–8 weeks)
-**Goals**
-- Extract `jobs-svc` (Queues; Neon job status; R2 artifacts).
-- Stand up `voice-svc` (Cartesia TTS; selected STT; DO for realtime rooms).
+**Risks & controls**
+- Route conflicts → CI **route audit** (P‑1).
+- Bloat → minimal templates; optional features via flags.
 
-**Deliverables**
-- Workers: `jobs-svc`, queue consumers; `voice-svc` with DO.
-- R2 lifecycle policy for artifacts.
+---
 
-**Acceptance**
-- `POST /api/jobs` scales with spikes (Queue depth monitored).
-- Voice round-trip fits SLO (see SLOs below).
+### A2. Multi‑Agent PRs (planner/architect/ui/tester) (TSK-A-2, P0)
+**Outcome**: AI agents coordinate to propose **PRs only** (no direct deploy), with typed diffs, tests, and acceptance checklist.
 
-## Phase 4 — Evolving Intelligence (ongoing)
-**Goals**
-- Enable **pgvector** on Neon; store embeddings, feedback, reward signals.
-- Nightly bandit A/B for prompt variants; versioned skills registry.
-
-**Deliverables**
-- Tables: `skill`, `skill_version`, `feedback`, `prompt_eval`.
-- Operator tools to promote/demote versions.
+**Scope**
+- `api/src/agents/*`, `docs/agents.md`
+- PR metadata includes prompts/test artifacts + **route audit proof**
 
 **Acceptance**
-- Positive movement in task success rate and cost per successful outcome.
+- `/api/si/ask` with `skill=change_request` yields a PR with: **full-file replacements**, tests, and checklist.
+- Merges require CI green: prompt goldens, unit/e2e, route audit.
 
-## Global SLO/SLI Targets
-- P90 latency:  
-  - `/api/si/ask` ≤ 1200ms (Workers AI path), ≤ 2200ms (Groq/OpenAI path).  
-  - `/api/credits` ≤ 150ms (KV hit), ≤ 500ms (Neon fallback).  
-- Uptime ≥ 99.9%; Queue drain < 2 min lag for p95 spikes.
-- Data consistency: KV↔Neon drift reconciled within 60s for balances.
+**Risks & controls**
+- Incorrect refactors → contract-first checks and generated tests required.
+- Drift → OPS route audit & probes on every PR touching routes/headers.
 
-## Risk & Mitigation
-- **Route shadowing** → Route Audit before/after any change.  
-- **Provider outages** → Ordered fallbacks + circuit breakers.  
-- **Cost spikes** → Per-user DO rate limiter; tiered models; max tokens/audio caps.  
-- **State divergence** → Idempotency keys; queue writers are idempotent; periodic reconciler.
+---
+
+### A3. Voice Runbook (TSK-A-3, P0)
+**Outcome**: **Voice-controlled** build/rollout/rollback + narrated probes and health metrics (Cartesia).
+
+**Scope**
+- `api/src/voice/runbook.ts`, `frontend/src/features/voice-runbook/*`
+
+**Acceptance**
+- Commands like “canary 10%” create PRs with route weight changes and OPS proofs.
+- Narration reads pre/post metrics and probe results.
+
+**Risks & controls**
+- Voice misfires → *read-only* mode by default, explicit “apply” confirmation creates PR.
+
+---
+
+### A4. Contract‑First APIs & Typed SDKs (TSK-A-4, P1)
+**Outcome**: **OpenAPI + TS SDK** per service; **Zod** guards; backward‑compat gates.
+
+**Scope**
+- `contracts/<service>.openapi.json`, `sdk/ts/<service>/*`
+- Zod validators in handlers
+
+**Acceptance**
+- Breaking changes blocked with actionable CI messages and skeleton migration PR.
+
+**Risks & controls**
+- Silent breaking changes → CI diff and consumer SDK tests.
+
+---
+
+### A5. Cost/Perf Advisor + Model Router (TSK-A-5, P1)
+**Outcome**: Per-route **token/cost/latency** tracking; **policy-based routing** across Groq/CF AI/OpenAI with fallback.
+
+**Scope**
+- `api/src/ai/router.ts`, `api/src/ai/advisor.ts`; frontend widget
+
+**Acceptance**
+- Advisor hints surface in `/api/si/ask` responses when thresholds exceed policy.
+- A/B model flips reflect expected usage deltas in feed.
+
+**Risks & controls**
+- Hidden cost spikes → per-tenant budgets & warnings (flags in P‑5).
+
+---
+
+## Phase B — Scale & Autonomy
+
+### B1. Zero‑Downtime Migrations (TSK-B-1, P0)
+**Outcome**: Safe **migration planner + verifier (Neon)**, with shadow tables and dual reads.
+
+**Acceptance**
+- Verifier green before cutover; audit logged.
+
+---
+
+### B2. Feature Flags & Experiments (TSK-B-2, P1)
+**Outcome**: KV-backed flags, audience rules, immediate rollbacks.
+
+**Acceptance**
+- Flag flips visible within seconds; audit trail in KV.
+
+---
+
+### B3. Incident Copilot + Autofix PRs (TSK-B-3, P1)
+**Outcome**: Detect anomalies → draft fix PR + tests + staged rollout plan.
+
+**Acceptance**
+- Seeded error spike triggers an actionable PR; human approval required.
+
+---
+
+### B4. RAG Pipelines w/ Lineage & Tests (TSK-B-4, P1)
+**Outcome**: Ingestion → chunking → embedding → index with **golden retrieval tests**.
+
+**Acceptance**
+- Baseline retrieval quality met or PR blocked.
+
+---
+
+### B5. Template Marketplace v1 (TSK-B-5, P2)
+**Outcome**: Curated template catalog; “remix” into App Graph + PR.
+
+**Acceptance**
+- Remix flow yields a working service with passing probes/tests.
+
+---
+
+## Platform Hardening (woven across phases)
+
+- **P‑1 Route audit CI** — block merges on route mismatch or missing proofs.
+- **P‑2 Usage rollups** to Neon for reporting (KV remains SoT for billing).
+- **P‑3 Uptime & synthetic SLOs** for `/ready`, `/auth/guest`, JWKS, `/api/si/ask`.
+- **P‑4 Secrets rotation** with JWKS overlap & PEM rekey playbook.
+- **P‑5 Tenant rate limits & budgets** at edge (Durable Objects or KV counters).
+- **P‑6 Prompt & test CI** — goldens for model/prompt drift.
+- **P‑7 Service Bindings path** — split **SI**, **Billing**, **Jobs**, **Uploads** into internal workers; hold **public route at gateway**.
+
+**Service split gates (each internal worker):**
+1. **Parity**: status/body/headers match baseline.
+2. **Latency**: p95 degradation < **10%**.
+3. **Rollback**: single flag in gateway to revert.
+4. **Probes**: OPS checklist for the service green; proof captured.
+
+---
+
+## Milestone Timeline (suggested target windows)
+
+> Use 2‑week sprints; adjust by capacity. Dates are targets — keep history in PRs.
+
+- **Sprint 1–2**: A1 (App Graph + Scaffold), P‑1 (CI route audit), C‑cleanup
+- **Sprint 3–4**: A2 (Multi‑agent PRs), P‑6 (Prompt CI), P‑3 (Uptime baseline)
+- **Sprint 5–6**: A3 (Voice Runbook), A5 (Advisor + Router)
+- **Sprint 7–8**: A4 (Contract‑first APIs/SDKs), P‑5 (Tenant budgets)
+- **Sprint 9–10**: B1 (Zero‑downtime migrations), B2 (Flags/Experiments)
+- **Sprint 11–12**: B3 (Incident Copilot), B4 (RAG pipelines)
+- **Sprint 13+**: B5 (Template Marketplace v1)
+
+---
+
+## Definition of Done (per milestone)
+
+1) **Docs** updated: README (API contract), OPS (probes & route audit), Tasks & this Roadmap.
+2) **Proofs** saved under `ops/proofs/` for changed routes/headers.
+3) **CI** green: route audit, prompts/tests, uptime checks.
+4) **Ops** playbooks updated; rollback steps validated.
+5) **No direct CF edits**; all changes come from a merged PR to `main`.
+
+---
+
+## Change Management & Risk
+
+- **Gates**: All route/DNS or CORS/header changes require fresh proofs.
+- **Rollback**: Canary route weights → 0%; revert PR; restore prior `wrangler.toml`.
+- **Keys**: PEM rekey with JWKS overlap window; rotate admin/API keys per P‑4.
+- **Cost**: Advisor alarms on per‑tenant overruns; enforce budgets (P‑5).
+
+---
+
+## Cross‑References
+
+- Tasks: `/docs/tasks.md`
+- Ops Runbook: `/OPS.md`
+- Worker entrypoint: `/api/src/index.ts`
+- Auth/Billing/Jobs module: `/api/src/modules/auth_billing.ts`
+- Wrangler config: `/api/wrangler.toml`
+- Route proofs: `/ops/proofs/*.txt`
+
+---
+
+_Last updated: aligned with production state (`api.cognomega.com` RS256 + JWKS + strict CORS) and microservices plan via Service Bindings._
