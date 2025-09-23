@@ -328,6 +328,19 @@ function getCallerEmail(req: Request): string | null {
 /* ---------------- Credits + Usage + Jobs ---------------- */
 
 type BalanceRow = { balance_credits: number; updated_at: string };
+function balancePayload(
+  row: BalanceRow,
+  extras: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    ...extras,
+    balance: row.balance_credits,
+    balance_credits: row.balance_credits,
+    credits: row.balance_credits,
+    updated_at: row.updated_at,
+    updated: row.updated_at,
+  };
+}
 function round3(n: number) {
   return Math.round((n + Number.EPSILON) * 1000) / 1000;
 }
@@ -595,7 +608,7 @@ async function processSiJob(env: AuthBillingEnv, jobId: string): Promise<void> {
       job0.status = "failed";
       job0.result = {
         error: "insufficient_credits",
-        balance_credits: balRow.balance_credits,
+        ...balancePayload(balRow),
       };
       job0.updated_at = new Date().toISOString();
       await setJob(env, job0);
@@ -728,24 +741,26 @@ export async function handleAuthBilling(
     }
 
     // ---- Credits
+    if (
+      p === "/api/billing/balance" ||
+      p === "/billing/balance" ||
+      p === "/api/v1/billing/balance"
+    ) {
+      if (req.method !== "GET")
+        return toJson({ error: "method_not_allowed" }, req, env, 405);
+      const email = getCallerEmail(req);
+      if (!email) return toJson({ error: "missing_email" }, req, env, 400);
+      const row = await getBalance(env, email);
+      return toJson(balancePayload(row, { email }), req, env, 200);
+    }
+
     if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
       if (req.method !== "GET")
         return toJson({ error: "method_not_allowed" }, req, env, 405);
       const email = getCallerEmail(req);
       if (!email) return toJson({ error: "missing_email" }, req, env, 400);
       const row = await getBalance(env, email);
-      return toJson(
-        {
-          email,
-          balance_credits: row.balance_credits,
-          updated_at: row.updated_at,
-          credits: row.balance_credits,
-          updated: row.updated_at,
-        },
-        req,
-        env,
-        200
-      );
+      return toJson(balancePayload(row, { email }), req, env, 200);
     }
 
     if (p === "/api/credits/adjust") {
@@ -777,12 +792,7 @@ export async function handleAuthBilling(
       else if (hasDelta) row = await adjustBalance(env, email, Number(body.delta));
       else return toJson({ error: "nothing_to_do" }, req, env, 400);
 
-      return toJson(
-        { email, balance_credits: row.balance_credits, updated_at: row.updated_at },
-        req,
-        env,
-        200
-      );
+      return toJson(balancePayload(row, { email }), req, env, 200);
     }
 
     // ---- Usage (guarded)
@@ -1241,7 +1251,7 @@ export async function handleAuthBilling(
       const balRow = await getBalance(env, email);
       if (!isGuest && (balRow.balance_credits ?? 0) <= 0) {
         return toJson(
-          { error: "insufficient_credits", balance_credits: balRow.balance_credits },
+          { error: "insufficient_credits", ...balancePayload(balRow) },
           req,
           env,
           402
