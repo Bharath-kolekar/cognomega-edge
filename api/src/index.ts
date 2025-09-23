@@ -58,29 +58,15 @@ const EXPOSE_ALWAYS = [
 function pickAllowedOrigin(req: Request, env: any) {
   const origin = req.headers.get("Origin") || "";
   if (!origin) return "";
-  const allowed = (env.ALLOWED_ORIGINS || "")
+  const cfPagesStable = "https://cognomega-frontend.pages.dev";
+  const allowed = (String(env.ALLOWED_ORIGINS || "") || "")
     .split(",")
     .map((s: string) => s.trim())
     .filter(Boolean);
 
-  // Stable Pages domain + previews
-  const pagesStable = "https://cognomega-frontend.pages.dev";
-  const previewRe = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/;
-
-  const devs = new Set([
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-  ]);
-
-  // If no ALLOWED_ORIGINS set, mirror origin (dev friendly)
-  if (!allowed.length) {
-    if (origin === pagesStable || previewRe.test(origin) || devs.has(origin)) return origin;
-    return ""; // strict: default deny
-  }
-
-  if (allowed.includes(origin)) return origin;
-  if (origin === pagesStable || previewRe.test(origin)) return origin;
-  if (devs.has(origin)) return origin;
+  const isPreview = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/i.test(origin);
+  const isLocal = origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173";
+  if (allowed.includes(origin) || origin === cfPagesStable || isPreview || isLocal) return origin;
   return "";
 }
 
@@ -145,7 +131,7 @@ export interface Env {
   KV_BILLING: KVNamespace;       // credits + usage + jobs
   R2_UPLOADS: R2Bucket;          // direct-upload bucket
 
-  /* ---------- NEW: Voice preferences KV ---------- */
+  /* ---------- New: per-user voice preferences ---------- */
   KV_PREFS: KVNamespace;         // per-user voice preferences
 
   /* ---------- Your existing fields (kept intact) ---------- */
@@ -248,22 +234,6 @@ app.use("*", async (c, next) => {
     c.res.headers.set("Access-Control-Expose-Headers", mergedExpose.join(", "));
   }
 });
-
-// -------- CORS (strict + works for upload) --------
-
-// Allow your prod & preview origins + local dev
-const allowedOrigins = [
-  "https://app.cognomega.com",
-  "https://cognomega-frontend.pages.dev", // stable Pages domain
-  /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/, // preview hashes
-  "https://www.cognomega.com",
-  "https://cognomega.com",
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-];
-
-const isAllowed = (origin?: string | null) =>
-  !!origin && allowedOrigins.some((o) => (typeof o === "string" ? o === origin : o.test(origin!)));
 
 // 1) Workers AI binding probe (used for sanity checks)
 app.get("/api/ai/binding", (c) => {
@@ -1052,9 +1022,9 @@ app.get("/api/admin/env-snapshot", (c) => {
     AI: !!c.env.AI,
     KEYS: !!c.env.KEYS,
     KV_BILLING: !!c.env.KV_BILLING,
-    KV_PREFS: !!c.env.KV_PREFS,   // <— new: voice prefs KV presence
     R2: !!(c.env as any).R2,
     R2_UPLOADS: !!(c.env as any).R2_UPLOADS,
+    KV_PREFS: !!c.env.KV_PREFS,   // <— new: voice prefs KV presence
   };
 
   return c.json({
@@ -1107,6 +1077,145 @@ app.get("/api/tts/cartesia/realtime-token", async (c) => {
   return c.json({ error: "cartesia_realtime_unavailable" }, 501);
 });
 
+/* --------------------------------------------------------
+   Voice: Per-user Preferences (KV_PREFS) — GET / PUT
+   -------------------------------------------------------- */
+
+type VoicePrefs = {
+  assistant_name?: string;         // e.g., "Vihaan"
+  language?: string;               // BCP-47, e.g., "en-US"
+  stt_language?: string;           // input language model hint
+  tts_voice?: string;              // provider-specific voice id
+  tts_speed?: number;              // 0.5..2
+  tts_pitch?: number;              // -12..+12 semitones (or provider scale)
+  wake_words?: string[];           // custom hotwords
+  continuous_listen?: boolean;     // hands-free
+  sentiment_tone?: "supportive" | "excited" | "calm" | "neutral";
+  accessibility_mode?: boolean;    // enhanced prompts/feedback
+  last_updated?: string;           // ISO string
+  // allow forward-compat extra fields:
+  [k: string]: unknown;
+};
+
+const PREFS_KEY_FOR = (email: string) => `prefs:${email.toLowerCase()}`;
+
+// Defaults are minimal; frontend may add richer presets
+const DEFAULT_PREFS: VoicePrefs = {
+  assistant_name: "Vihaan",
+  language: "en-US",
+  stt_language: "en-US",
+  tts_voice: "default",
+  tts_speed: 1.0,
+  tts_pitch: 0,
+  wake_words: [],
+  continuous_listen: false,
+  sentiment_tone: "neutral",
+  accessibility_mode: false,
+};
+
+function isPlainObject(v: any): v is Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v);
+}
+
+function sanitizePrefs(input: any): VoicePrefs {
+  const out: VoicePrefs = { ...DEFAULT_PREFS };
+  if (!isPlainObject(input)) return out;
+
+  const copyIf = <T>(k: keyof VoicePrefs, pred: (x: any) => x is T) => {
+    if (k in input && pred((input as any)[k])) (out as any)[k] = (input as any)[k];
+  };
+
+  copyIf<string>("assistant_name", (x): x is string => typeof x === "string" && x.length <= 64);
+  copyIf<string>("language", (x): x is string => typeof x === "string" && x.length <= 32);
+  copyIf<string>("stt_language", (x): x is string => typeof x === "string" && x.length <= 32);
+  copyIf<string>("tts_voice", (x): x is string => typeof x === "string" && x.length <= 64);
+  copyIf<number>("tts_speed", (x): x is number => typeof x === "number" && isFinite(x) && x > 0 && x <= 3);
+  copyIf<number>("tts_pitch", (x): x is number => typeof x === "number" && isFinite(x) && x >= -24 && x <= 24);
+  if (Array.isArray((input as any).wake_words)) {
+    out.wake_words = (input as any).wake_words
+      .map((s: any) => (typeof s === "string" ? s.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 10);
+  }
+  copyIf<boolean>("continuous_listen", (x): x is boolean => typeof x === "boolean");
+  if (
+    typeof (input as any).sentiment_tone === "string" &&
+    ["supportive", "excited", "calm", "neutral"].includes((input as any).sentiment_tone)
+  ) {
+    out.sentiment_tone = (input as any).sentiment_tone as any;
+  }
+  copyIf<boolean>("accessibility_mode", (x): x is boolean => typeof x === "boolean");
+
+  // carry forward compatible extras if the payload is not too big
+  const raw = JSON.stringify(input);
+  if (raw.length <= 10_000) {
+    for (const [k, v] of Object.entries(input)) {
+      if (!(k in out)) (out as any)[k] = v;
+    }
+  }
+  out.last_updated = new Date().toISOString();
+  return out;
+}
+
+// GET: read current prefs (fallback to defaults if missing)
+app.get("/api/voice/prefs", async (c) => {
+  const email = c.req.header("x-user-email") || c.req.query("email") || "";
+  const e = String(email || "").toLowerCase().trim();
+  if (!e) return c.json({ error: "missing_email" }, 400);
+
+  const key = PREFS_KEY_FOR(e);
+  const raw = await c.env.KV_PREFS.get(key);
+  let prefs: VoicePrefs = DEFAULT_PREFS;
+  if (raw) {
+    try {
+      const j = JSON.parse(raw);
+      if (isPlainObject(j)) prefs = { ...DEFAULT_PREFS, ...(j as any) };
+    } catch {
+      // ignore bad JSON; treat as defaults
+    }
+  }
+
+  return c.json(
+    {
+      email: e,
+      prefs,
+    },
+    200,
+    {
+      "Cache-Control": "no-store",
+    } as any
+  );
+});
+
+// PUT: update prefs (sanitized/validated) and persist in KV
+app.put("/api/voice/prefs", async (c) => {
+  const email = c.req.header("x-user-email") || c.req.query("email") || "";
+  const e = String(email || "").toLowerCase().trim();
+  if (!e) return c.json({ error: "missing_email" }, 400);
+
+  const body = await c.req.json().catch(() => ({}));
+  if (!isPlainObject(body)) return c.json({ error: "invalid_json" }, 400);
+
+  const sanitized = sanitizePrefs(body);
+  const key = PREFS_KEY_FOR(e);
+
+  // Small guard on payload size (10 KB)
+  const json = JSON.stringify(sanitized);
+  if (json.length > 10_000) return c.json({ error: "payload_too_large" }, 413);
+
+  await c.env.KV_PREFS.put(key, json);
+  return c.json(
+    {
+      ok: true,
+      email: e,
+      prefs: sanitized,
+    },
+    200,
+    {
+      "Cache-Control": "no-store",
+    } as any
+  );
+});
 
 // -------- Export CF Worker entrypoints --------
 export default {
