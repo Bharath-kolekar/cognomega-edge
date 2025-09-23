@@ -29,6 +29,13 @@ id      = "7e9d002852ba44849900a2babfcaf816"
 binding = "KV_BILLING"
 id      = "5da314a8b48b4db684678ab5ad074563"
 
+# (Optional for Voice MVP) KV_PREFS: per-user voice preferences.
+# NOTE: To keep production stable, this block is commented out.
+#       After you create the namespace in Cloudflare, replace <kv-prefs-id> and uncomment.
+# [[kv_namespaces]]
+# binding = "KV_PREFS"
+# id      = "<kv-prefs-id>"
+
 # R2 buckets
 # Keep BOTH: legacy routes may use R2, new module uses R2_UPLOADS.
 [[r2_buckets]]
