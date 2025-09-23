@@ -12,3 +12,9 @@
 
 == SI ask headers ==
 provider=groq; model=llama-3.1-8b-instant; in=52; out=34; used=0.004; bal=53.146; req=983dae8a0ea8fdab
+== SI headers ==
+provider=groq
+model=llama-3.1-8b-instant
+in=52 out=338
+used=0.020 bal=53.126
+req=983db7611ab3d98b
