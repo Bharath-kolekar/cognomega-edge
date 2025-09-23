@@ -29,7 +29,7 @@ id      = "7e9d002852ba44849900a2babfcaf816"
 binding = "KV_BILLING"
 id      = "5da314a8b48b4db684678ab5ad074563"
 
-# KV_PREFS: per-user voice preferences (new; infra already created)
+# KV_PREFS: per-user voice preferences
 [[kv_namespaces]]
 binding = "KV_PREFS"
 id      = "ef783de622644eb89ff2dacfcc41a2f2"
