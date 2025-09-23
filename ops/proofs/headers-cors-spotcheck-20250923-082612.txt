@@ -1,0 +1,10 @@
+== jwks ==
+status=200
+rid=9836c4799d38fcf3
+origin=https://app.cognomega.com
+
+== sample si/ask headers ==
+provider=groq
+model=llama-3.1-8b-instant
+tin=57 tout=167
+credits=0.011 bal=53.738

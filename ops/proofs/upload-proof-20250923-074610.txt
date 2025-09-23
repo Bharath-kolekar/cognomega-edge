@@ -1,0 +1,11 @@
+== small upload ==
+key=uploads/2025/09/23/vihaan_cognomega.com/95c5ddec-fa75-4b3c-a51d-85edc5b7fe91-random-1mb.bin
+size=1048576
+ctype=application/octet-stream
+etag=62a47fe4ae96985b6210d046763dad38
+version=7e668ba790af963617e00d206d247e0b
+reqid=98368518ba736009
+
+== oversize ==
+status=
+body=Error while copying content to a stream.
