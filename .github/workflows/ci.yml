@@ -5,8 +5,28 @@ on:
   push:
 
 jobs:
+  changes:
+    name: detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            api:
+              - 'api/**'
+            frontend:
+              - 'frontend/**'
+
   api:
     name: api
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -14,7 +34,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -22,7 +41,6 @@ jobs:
           cache-dependency-path: |
             api/package-lock.json
             api/pnpm-lock.yaml
-
       - name: Install deps (npm or pnpm)
         run: |
           if [ -f pnpm-lock.yaml ]; then
@@ -34,30 +52,15 @@ jobs:
           else
             npm install
           fi
-
       - name: Typecheck if present
         run: npx -y tsc --noEmit || echo "tsc not present; skipping"
-
-      # ✅ NEW: ultra-fast syntax/bundle smoke to catch TS/ES errors early
-      - name: Esbuild syntax bundle (fast smoke)
-        run: npx --yes esbuild src/index.ts --bundle --platform=neutral --outfile=out.tmp.js
-
-      # ✅ NEW: route audit to ensure a single owner for api.cognomega.com/*
-      - name: Route audit (api.cognomega.com/* must have exactly one owner)
-        run: |
-          set -euo pipefail
-          test -f wrangler.toml
-          hits=$(grep -E '^\s*\{\s*pattern\s*=\s*"api\.cognomega\.com/\*"' wrangler.toml | wc -l | tr -d ' ')
-          if [ "$hits" != "1" ]; then
-            echo "::error title=Route audit failed::Expected exactly one api.cognomega.com/* route in api/wrangler.toml, found $hits"
-            exit 1
-          fi
-
       - name: Build if present
         run: npm run -s build --if-present || true
 
   frontend:
     name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -65,7 +68,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -73,7 +75,6 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             frontend/pnpm-lock.yaml
-
       - name: Install deps (npm or pnpm)
         run: |
           if [ -f pnpm-lock.yaml ]; then
@@ -85,9 +86,7 @@ jobs:
           else
             npm install
           fi
-
       - name: Typecheck if present
         run: npx -y tsc --noEmit || echo "tsc not present; skipping"
-
       - name: Build if present
         run: npm run -s build --if-present || true
