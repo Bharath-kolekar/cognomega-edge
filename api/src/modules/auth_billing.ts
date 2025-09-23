@@ -5,6 +5,7 @@
 // Handles (intentionally *not* /ready):
 //   POST /auth/guest | /api/auth/guest | /api/v1/auth/guest
 //   GET  /.well-known/jwks.json
+//   GET  /api/billing/balance            <-- NEW: module-owned balance endpoint (KV)
 //   GET  /api/credits | /credits | /api/v1/credits
 //   POST /api/credits/adjust
 //   GET/POST /api/billing/usage   (aliases: /api/usage, /usage, /api/v1/usage, /api/v1/billing/usage)
@@ -87,40 +88,15 @@ function reqIdFrom(req: Request): string {
   return req.headers.get("cf-ray") || crypto.randomUUID();
 }
 
-/* ---------------- Origin allow rules (match index.ts) ---------------- */
-/**
- * We mirror the unified origin logic from api/src/index.ts so the module’s
- * responses stay consistent even if they set headers directly.
- * Priority:
- * 1) Exact match from ALLOWED_ORIGINS (comma-separated)
- * 2) Stable Pages domain + preview subdomains
- * 3) Local dev (5173)
- * 4) If ALLOWED_ORIGINS is empty, allow same-origin (rare)
- */
-function pickAllowedOrigin(req: Request, env: AuthBillingEnv): string {
-  const origin = req.headers.get("Origin") || "";
-  if (!origin) return "";
+/* ---------------- CORS helpers ---------------- */
 
+function corsHeaders(req: Request, env: AuthBillingEnv): Headers {
+  const origin = req.headers.get("Origin") || "";
   const allowed = (env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-
-  if (allowed.includes(origin)) return origin;
-
-  const pagesStable = "https://cognomega-frontend.pages.dev";
-  const pagesPreview = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/;
-
-  if (origin === pagesStable || pagesPreview.test(origin)) return origin;
-  if (origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173") return origin;
-  if (allowed.length === 0) return origin;
-
-  return "";
-}
-
-/* ---------------- CORS helpers ---------------- */
-function corsHeaders(req: Request, env: AuthBillingEnv): Headers {
-  const allow = pickAllowedOrigin(req, env);
+  const allow = allowed.length === 0 ? origin : allowed.includes(origin) ? origin : "";
 
   const h = new Headers();
   if (allow) h.set("Access-Control-Allow-Origin", allow);
@@ -328,9 +304,6 @@ function getCallerEmail(req: Request): string | null {
 /* ---------------- Credits + Usage + Jobs ---------------- */
 
 type BalanceRow = { balance_credits: number; updated_at: string };
-function balancePayload(
-  row: BalanceRow,
-  extras: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
     ...extras,
@@ -384,6 +357,18 @@ async function adjustBalance(
 ): Promise<BalanceRow> {
   const cur = await getBalance(env, email);
   return setBalance(env, email, cur.balance_credits + delta);
+}
+
+/** Standardized balance JSON used across endpoints (keeps README contract). */
+function balancePayload(row: BalanceRow, email?: string) {
+  return {
+    ...(email ? { email } : {}),
+    balance_credits: row.balance_credits,
+    updated_at: row.updated_at,
+    // aliases kept for back-compat / docs parity
+    credits: row.balance_credits,
+    updated: row.updated_at,
+  };
 }
 
 type UsageEvent = {
@@ -608,8 +593,7 @@ async function processSiJob(env: AuthBillingEnv, jobId: string): Promise<void> {
       job0.status = "failed";
       job0.result = {
         error: "insufficient_credits",
-        ...balancePayload(balRow),
-      };
+        ...balancePayload(balRow, email),      };
       job0.updated_at = new Date().toISOString();
       await setJob(env, job0);
       return;
@@ -740,28 +724,22 @@ export async function handleAuthBilling(
       return new Response(JSON.stringify(jwks), { status: 200, headers: h });
     }
 
-    // ---- Credits
-    if (
-      p === "/api/billing/balance" ||
-      p === "/billing/balance" ||
-      p === "/api/v1/billing/balance"
-    ) {
-      if (req.method !== "GET")
+    // ---- Balance (module-owned; KV source of truth)
+    if (p === "/api/billing/balance" || p === "/api/v1/billing/balance") {      if (req.method !== "GET")
         return toJson({ error: "method_not_allowed" }, req, env, 405);
       const email = getCallerEmail(req);
       if (!email) return toJson({ error: "missing_email" }, req, env, 400);
       const row = await getBalance(env, email);
-      return toJson(balancePayload(row, { email }), req, env, 200);
+      return toJson(balancePayload(row, email), req, env, 200);
     }
 
-    if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
+    // ---- Credits (GET returns balance payload; POST adjust returns same shape)    if (p === "/api/credits" || p === "/credits" || p === "/api/v1/credits") {
       if (req.method !== "GET")
         return toJson({ error: "method_not_allowed" }, req, env, 405);
       const email = getCallerEmail(req);
       if (!email) return toJson({ error: "missing_email" }, req, env, 400);
       const row = await getBalance(env, email);
-      return toJson(balancePayload(row, { email }), req, env, 200);
-    }
+      return toJson(balancePayload(row, email), req, env, 200);    }
 
     if (p === "/api/credits/adjust") {
       if (req.method !== "POST")
@@ -792,8 +770,7 @@ export async function handleAuthBilling(
       else if (hasDelta) row = await adjustBalance(env, email, Number(body.delta));
       else return toJson({ error: "nothing_to_do" }, req, env, 400);
 
-      return toJson(balancePayload(row, { email }), req, env, 200);
-    }
+      return toJson(balancePayload(row, email), req, env, 200);    }
 
     // ---- Usage (guarded)
     if (isUsagePath(p)) {
@@ -1251,8 +1228,7 @@ export async function handleAuthBilling(
       const balRow = await getBalance(env, email);
       if (!isGuest && (balRow.balance_credits ?? 0) <= 0) {
         return toJson(
-          { error: "insufficient_credits", ...balancePayload(balRow) },
-          req,
+          { error: "insufficient_credits", ...balancePayload(balRow, email) },          req,
           env,
           402
         );
@@ -1348,3 +1324,6 @@ export function registerAuthBillingRoutes<AppEnv extends { Bindings: AuthBilling
     await next();
   });
 }
+
+
+
