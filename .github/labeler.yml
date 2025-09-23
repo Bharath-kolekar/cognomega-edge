@@ -1,0 +1,21 @@
+ops:proofs-attached:
+  - changed-files:
+      - any-glob-to-any-file: ops/proofs/**
+
+change:routes:
+  - changed-files:
+      - any-glob-to-any-file: api/wrangler.toml
+
+change:cors:
+  - changed-files:
+      - any-glob-to-any-file: api/src/**
+
+change:headers:
+  - changed-files:
+      - any-glob-to-any-file: api/src/**
+
+docs:runbook:
+  - changed-files:
+      - any-glob-to-any-file: |
+          OPS.md
+          README.md

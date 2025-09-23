@@ -1,31 +1,72 @@
-name: Deploy API (Cloudflare Workers)
-
+name: deploy-api
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - 'api/**'
-  workflow_dispatch:
-
-concurrency:
-  group: deploy-api-prod
-  cancel-in-progress: false
+      - '.github/workflows/deploy-api.yml'
 
 jobs:
   deploy:
+    name: Deploy API (CF Workers)
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.cognomega.com
     permissions:
       contents: read
+      id-token: write   # optional; needed only if you switch to OIDC auth for CF
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Deploy with Wrangler
-        uses: cloudflare/wrangler-action@v3
+      - uses: actions/setup-node@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: api
-          # wrangler.toml already has name/routes/compatibility_date
-          command: deploy
-          packageManager: npm
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm i -g wrangler@3
+
+      - name: Install API deps
+        working-directory: api
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm i --no-frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i
+          fi
+
+      - name: Deploy (wrangler)
+        working-directory: api
+        env:
+          # Use the exact secret names you already created in the repo
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
+
+      # Post-deploy probes (proofs as artifacts)
+      - name: Probes
+        run: |
+          set -euo pipefail
+          base="https://api.cognomega.com"
+          {
+            echo "== ai/binding ==" 
+            curl -fS "$base/api/ai/binding"
+            echo
+            echo "== jwks (head 120) =="
+            curl -fS "$base/.well-known/jwks.json" | head -c 120
+            echo
+            echo "== preflight si =="
+            curl -fSI -X OPTIONS "$base/api/si/ask" \
+              -H "Origin: https://app.cognomega.com" \
+              -H "Access-Control-Request-Method: POST" \
+              -H "Access-Control-Request-Headers: content-type, x-user-email, x-intelligence-tier"
+          } | tee probes.txt
+
+      - name: Upload proofs
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-proofs
+          path: probes.txt

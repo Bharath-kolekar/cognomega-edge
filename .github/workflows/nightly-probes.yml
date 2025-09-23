@@ -1,0 +1,9 @@
+# .github/workflows/nightly-probes.yml
+name: nightly-probes
+on:
+  schedule: [{ cron: '0 2 * * *' }]  # 02:00 UTC
+jobs:
+  probes:
+    uses: ./.github/workflows/deploy.yml
+    with: {}
+    secrets: inherit
