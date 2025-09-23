@@ -58,27 +58,29 @@ const EXPOSE_ALWAYS = [
 function pickAllowedOrigin(req: Request, env: any) {
   const origin = req.headers.get("Origin") || "";
   if (!origin) return "";
-
-  // 1) Explicit allow-list from env
   const allowed = (env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((s: string) => s.trim())
     .filter(Boolean);
 
-  if (allowed.includes(origin)) return origin;
-
-  // 2) Pages stable + preview subdomains
+  // Stable Pages domain + previews
   const pagesStable = "https://cognomega-frontend.pages.dev";
-  const pagesPreview = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/;
+  const previewRe = /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/;
 
-  if (origin === pagesStable || pagesPreview.test(origin)) return origin;
+  const devs = new Set([
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ]);
 
-  // 3) Local dev
-  if (origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173") return origin;
+  // If no ALLOWED_ORIGINS set, mirror origin (dev friendly)
+  if (!allowed.length) {
+    if (origin === pagesStable || previewRe.test(origin) || devs.has(origin)) return origin;
+    return ""; // strict: default deny
+  }
 
-  // 4) If ALLOWED_ORIGINS is intentionally empty, allow same-origin (rare)
-  if (allowed.length === 0) return origin;
-
+  if (allowed.includes(origin)) return origin;
+  if (origin === pagesStable || previewRe.test(origin)) return origin;
+  if (devs.has(origin)) return origin;
   return "";
 }
 
@@ -142,6 +144,9 @@ export interface Env {
   KEYS: KVNamespace;             // public JWKS (key "jwks")
   KV_BILLING: KVNamespace;       // credits + usage + jobs
   R2_UPLOADS: R2Bucket;          // direct-upload bucket
+
+  /* ---------- NEW: Voice preferences KV ---------- */
+  KV_PREFS: KVNamespace;         // per-user voice preferences
 
   /* ---------- Your existing fields (kept intact) ---------- */
   DATABASE_URL?: string;
@@ -243,6 +248,22 @@ app.use("*", async (c, next) => {
     c.res.headers.set("Access-Control-Expose-Headers", mergedExpose.join(", "));
   }
 });
+
+// -------- CORS (strict + works for upload) --------
+
+// Allow your prod & preview origins + local dev
+const allowedOrigins = [
+  "https://app.cognomega.com",
+  "https://cognomega-frontend.pages.dev", // stable Pages domain
+  /^https:\/\/[a-z0-9-]+\.cognomega-frontend\.pages\.dev$/, // preview hashes
+  "https://www.cognomega.com",
+  "https://cognomega.com",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+
+const isAllowed = (origin?: string | null) =>
+  !!origin && allowedOrigins.some((o) => (typeof o === "string" ? o === origin : o.test(origin!)));
 
 // 1) Workers AI binding probe (used for sanity checks)
 app.get("/api/ai/binding", (c) => {
@@ -483,7 +504,7 @@ async function getBalance(sql: any, userId: string): Promise<number> {
 }
 
 function creditsForTokens(tokensIn: number, tokensOut: number) {
-  const t = (tokensIn + tokensOut) / 1000;
+  const t = (tokensIn + tokensOut) / TOKENS_PER_CREDIT;
   return Number(t.toFixed(3));
 }
 
@@ -1031,6 +1052,7 @@ app.get("/api/admin/env-snapshot", (c) => {
     AI: !!c.env.AI,
     KEYS: !!c.env.KEYS,
     KV_BILLING: !!c.env.KV_BILLING,
+    KV_PREFS: !!c.env.KV_PREFS,   // <— new: voice prefs KV presence
     R2: !!(c.env as any).R2,
     R2_UPLOADS: !!(c.env as any).R2_UPLOADS,
   };
@@ -1084,6 +1106,7 @@ app.get("/api/tts/cartesia/realtime-token", async (c) => {
   // TODO: Exchange for a short-lived token / WebRTC credentials
   return c.json({ error: "cartesia_realtime_unavailable" }, 501);
 });
+
 
 // -------- Export CF Worker entrypoints --------
 export default {
