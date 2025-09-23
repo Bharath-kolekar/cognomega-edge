@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "at": "2025-09-23T03:03:38.563Z",
+  "note": "Secrets are boolean flags (set/unset). No secret values are returned.",
+  "vars": {
+    "ALLOWED_ORIGINS": "https://app.cognomega.com,https://www.cognomega.com,https://cognomega.com,https://cognomega-frontend.pages.dev,http://localhost:5173,http://127.0.0.1:5173",
+    "ISSUER": "https://api.cognomega.com",
+    "JWT_TTL_SEC": "3600",
+    "KID": "k1",
+    "CREDIT_PER_1K": "0.05",
+    "MAX_UPLOAD_BYTES": "10485760",
+    "WARN_CREDITS": "5",
+    "PREFERRED_PROVIDER": "groq,cfai,openai",
+    "GROQ_MODEL": "llama-3.1-8b-instant",
+    "CF_AI_MODEL": "@cf/meta/llama-3.1-8b-instruct",
+    "OPENAI_MODEL": "gpt-4o-mini",
+    "OPENAI_BASE": "https://api.openai.com/v1",
+    "GROQ_BASE": ""
+  },
+  "secrets": {
+    "PRIVATE_KEY_PEM": true,
+    "GROQ_API_KEY": true,
+    "OPENAI_API_KEY": true,
+    "ADMIN_API_KEY": true,
+    "ADMIN_KEY": true,
+    "ADMIN_TASK_SECRET": true,
+    "CARTESIA_API_KEY": true,
+    "DATABASE_URL": true,
+    "NEON_DATABASE_URL": true
+  },
+  "bindings": {
+    "AI": true,
+    "KEYS": true,
+    "KV_BILLING": true,
+    "KV_PREFS": true,
+    "R2": true,
+    "R2_UPLOADS": true
+  }
+}

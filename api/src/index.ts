@@ -217,6 +217,7 @@ app.use("*", async (c, next) => {
   // Add CORS on normal responses
   const allow = pickAllowedOrigin(req, env);
   if (allow) c.res.headers.set("Access-Control-Allow-Origin", allow);
+  c.res.headers.set("Access-Control-Allow-Credentials", "true"); 
   c.res.headers.append("Vary", "Origin");
 
   // Ensure X-Request-Id is present; preserve if already set (e.g., module)
