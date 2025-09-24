@@ -1,45 +1,29 @@
-name: deploy
-
+﻿name: deploy
 on:
   push:
     branches: [ main ]
-    # Only fire when API files change
     paths:
       - 'api/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  api:
     name: Deploy API (CF Workers)
     runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-api
-      cancel-in-progress: true
-
+    environment:
+      name: production
+      url: https://api.cognomega.com
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
-
-      # Double-guard: even if GitHub misfires, skip when no api/** changes
-      - name: Detect api changes
-        id: ch
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            api:
-              - 'api/**'
-
-      - name: Skip (no api/** changes)
-        if: steps.ch.outputs.api != 'true'
-        run: |
-          echo "No api/** changes; skipping deploy."
-          exit 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install Wrangler
         run: npm i -g wrangler@3
-
       - name: Install API deps
         working-directory: api
         run: |
@@ -51,13 +35,30 @@ jobs:
           else
             npm i
           fi
-
       - name: Deploy (wrangler)
         working-directory: api
         env:
-          # Use the secrets you actually have configured
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CF_ACCOUNT_ID }}
+        run: wrangler deploy
+
+      # Post-deploy probes
+      - name: Probes
         run: |
-          set -euo pipefail
-          wrangler deploy
+          set -e
+          base="https://api.cognomega.com"
+          echo "== ai/binding =="                        | tee probes.txt
+          curl -sS "$base/api/ai/binding"               | tee -a probes.txt
+          echo "\n== jwks (head 120) =="                 | tee -a probes.txt
+          curl -sS "$base/.well-known/jwks.json" | head -c 120 | tee -a probes.txt
+          echo "\n== preflight si =="                    | tee -a probes.txt
+          curl -sSI -X OPTIONS "$base/api/si/ask" \
+            -H "Origin: https://app.cognomega.com" \
+            -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: content-type, x-user-email, x-intelligence-tier" \
+            | tee -a probes.txt
+      - name: Upload proofs
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-proofs
+          path: probes.txt
