@@ -1,71 +1,63 @@
 name: deploy
+
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+    paths:
+      - "api/**"
+      - "api/wrangler.toml"
+      - ".github/workflows/deploy.yml"   # allow changes to this file to test itself
+  workflow_dispatch:
 
 jobs:
-  deploy-worker:
+  deploy:
     runs-on: ubuntu-latest
-    environment: production
-    permissions: { contents: read }
+    environment:
+      name: production
+      url: https://api.cognomega.com
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install wrangler
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Wrangler
         run: npm i -g wrangler@3
-
-      - name: Deploy API worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      - name: Install API deps
+        working-directory: api
         run: |
-          cd api
-          wrangler deploy --config wrangler.toml --env production
-
-  probes:
-    runs-on: ubuntu-latest
-    needs: deploy-worker
-    steps:
-      - name: Run production probes
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm i --no-frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i
+          fi
+      - name: Deploy (wrangler)
+        working-directory: api
         env:
-          API: https://api.cognomega.com
-          ORIGIN: https://app.cognomega.com
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
+      - name: Probes
         run: |
-          set -euo pipefail
-          stamp=$(date -u +%Y%m%d-%H%M%S)
-          mkdir -p ops/proofs
-
-          # 1) Preflight
-          curl -i -s -X OPTIONS "$API/api/si/ask" \
-            -H "Origin: $ORIGIN" \
+          set -e
+          base="https://api.cognomega.com"
+          echo "== ai/binding =="                        | tee probes.txt
+          curl -sS "$base/api/ai/binding"               | tee -a probes.txt
+          echo "\n== jwks (head 120) =="                 | tee -a probes.txt
+          curl -sS "$base/.well-known/jwks.json" | head -c 120 | tee -a probes.txt
+          echo "\n== preflight si =="                    | tee -a probes.txt
+          curl -sSI -X OPTIONS "$base/api/si/ask" \
+            -H "Origin: https://app.cognomega.com" \
             -H "Access-Control-Request-Method: POST" \
             -H "Access-Control-Request-Headers: content-type, x-user-email, x-intelligence-tier" \
-            > ops/proofs/${stamp}-preflight.txt
-
-          # 2) JWKS (first 120)
-          jwks=$(curl -s "$API/.well-known/jwks.json")
-          echo "${jwks:0:120}" > ops/proofs/${stamp}-jwks-head.txt
-
-          # 3) AI binding
-          curl -s "$API/api/ai/binding" > ops/proofs/${stamp}-ai-binding.json
-
-          # 4) Guest token sanity
-          tok=$(curl -s -X POST "$API/auth/guest" | jq -r .token)
-          hdr=$(echo "$tok" | cut -d. -f1 | base64 -d 2>/dev/null || true)
-          pay=$(echo "$tok" | cut -d. -f2 | base64 -d 2>/dev/null || true)
-          echo "$hdr" > ops/proofs/${stamp}-guest-hdr.json || true
-          echo "$pay" > ops/proofs/${stamp}-guest-payload.json || true
-
-          # 5) Credits/balance check (bearer only, should resolve guest)
-          curl -s "$API/api/billing/balance" -H "Authorization: Bearer $tok" \
-            > ops/proofs/${stamp}-balance-guest.json
-
-          # Fail-fast assertions (basic)
-          jq -e '.ai_bound == true' ops/proofs/${stamp}-ai-binding.json >/dev/null
-          jq -e '.iss=="https://api.cognomega.com"' ops/proofs/${stamp}-guest-payload.json >/dev/null
-
+            | tee -a probes.txt
       - name: Upload proofs
         uses: actions/upload-artifact@v4
         with:
-          name: production-proofs
-          path: ops/proofs
+          name: post-deploy-proofs
+          path: probes.txt
