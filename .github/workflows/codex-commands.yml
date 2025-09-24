@@ -1,0 +1,68 @@
+name: codex-commands
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  handle:
+    # only on issues (not PR review comments)
+    if: ${{ github.event.issue.pull_request == null }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse /codex-* command from comment
+        id: parse
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          echo "::group::Comment body"
+          printf '%s\n' "$COMMENT"
+          echo "::endgroup::"
+
+          # First line wins if it starts with /codex-
+          first="$(printf '%s\n' "$COMMENT" | sed -n '1p')"
+          cmd=""
+          if printf '%s' "$first" | grep -q '^/codex-'; then
+            cmd="$first"
+          else
+            # Find first fenced code block and pick the first /codex- line
+            awk -v RS="```" "NR%2==0{print \$0}" <<<"$COMMENT" > blocks.txt || true
+            if [ -s blocks.txt ]; then
+              tr -d '\r' < blocks.txt | grep -m1 '^/codex-' > found.txt || true
+              if [ -s found.txt ]; then
+                cmd="$(head -n1 found.txt)"
+              fi
+            fi
+          fi
+
+          if [ -z "$cmd" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0  # no red X on missing command
+          fi
+
+          echo "command=$cmd" >> "$GITHUB_OUTPUT"
+          echo "found=true"   >> "$GITHUB_OUTPUT"
+
+      - name: Reply: no command found
+        if: steps.parse.outputs.found != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --body "⚠️ I couldn't find a \`/codex-*\` command in that comment.
+          Start your comment with \`/codex-run ...\` **or** put the command as the first line inside a fenced block."
+
+      - name: Reply: command accepted (hand off to Codex)
+        if: steps.parse.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMAND: ${{ steps.parse.outputs.command }}
+        run: |
+          set -euo pipefail
+          echo "::notice title=Codex command::${COMMAND}"
+          gh issue comment ${{ github.event.issue.number }} --body ":rocket: Command queued for Codex:\n\n\`\`\`\n${COMMAND}\n\`\`\`\n"
