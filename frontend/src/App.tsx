@@ -1,13 +1,13 @@
-// C:\dev\cognomega-edge\frontend\src\App.tsx
+// frontend/src/App.tsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   apiUrl,
   readUserEmail,
   ensureApiBase,
 } from "./lib/api/apiBase";
 
-/* global window */
-import React, { useCallback, useEffect, useRef, useState } from "react";
-// NOTE: We will dynamically import web-llm to avoid type conflicts.
+import ThemeShell from "./components/ThemeShell";
+import TopNav from "./components/TopNav";
 import CreditPill from "./components/CreditPill";
 import LaunchInBuilder from "./components/LaunchInBuilder";
 import UsageFeed from "./components/UsageFeed";
@@ -46,17 +46,34 @@ type Job = {
   progress?: string | number | null;
 };
 
-// Response shape for /api/upload/direct
-type UploadResp =
-  | {
-      ok: true;
-      key: string;
-      size: number;
-      etag?: string | null;
-      version?: string | null;
-      content_type?: string;
-    }
-  | { error: string; [k: string]: any };
+type Tier = "human" | "advanced" | "super";
+type ABVariant = "A" | "B";
+type Skill =
+  | "summarize"
+  | "codegen"
+  | "refactor"
+  | "testgen"
+  | "explain"
+  | "plan"
+  | "api-design"
+  | "sql"
+  | "data-viz"
+  | "translate"
+  | "vision-analyze";
+
+const SKILLS: { id: Skill; label: string }[] = [
+  { id: "summarize", label: "Summarize" },
+  { id: "codegen", label: "Code Generation" },
+  { id: "refactor", label: "Refactor" },
+  { id: "testgen", label: "Test Generation" },
+  { id: "explain", label: "Explain Code" },
+  { id: "plan", label: "Plan / Decompose" },
+  { id: "api-design", label: "API Design" },
+  { id: "sql", label: "SQL / Analytics" },
+  { id: "data-viz", label: "Data Visualization" },
+  { id: "translate", label: "Translate" },
+  { id: "vision-analyze", label: "Vision: Analyze" },
+];
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
@@ -153,36 +170,6 @@ function extractToken(result: any): { token: string; ttl: number } | null {
   }
 }
 
-// ---- A/B + tier + skill helpers (Ask console telemetry) ----
-type Tier = "human" | "advanced" | "super";
-type ABVariant = "A" | "B";
-type Skill =
-  | "summarize"
-  | "codegen"
-  | "refactor"
-  | "testgen"
-  | "explain"
-  | "plan"
-  | "api-design"
-  | "sql"
-  | "data-viz"
-  | "translate"
-  | "vision-analyze";
-
-const SKILLS: { id: Skill; label: string }[] = [
-  { id: "summarize", label: "Summarize" },
-  { id: "codegen", label: "Code Generation" },
-  { id: "refactor", label: "Refactor" },
-  { id: "testgen", label: "Test Generation" },
-  { id: "explain", label: "Explain Code" },
-  { id: "plan", label: "Plan / Decompose" },
-  { id: "api-design", label: "API Design" },
-  { id: "sql", label: "SQL / Analytics" },
-  { id: "data-viz", label: "Data Visualization" },
-  { id: "translate", label: "Translate" },
-  { id: "vision-analyze", label: "Vision: Analyze" },
-];
-
 function getOrCreateClientId(): string {
   const KEY = "cm_client_id";
   try {
@@ -196,10 +183,15 @@ function getOrCreateClientId(): string {
   }
 }
 
+/* ---------- shared UI tokens ---------- */
+const fieldCls =
+  "w-full rounded-2xl border border-white/40 bg-white/70 px-4 py-2.5 text-sm text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus-visible:ring-indigo-400 dark:focus-visible:ring-offset-slate-950 backdrop-blur placeholder:text-slate-500 dark:placeholder:text-slate-400";
+
+/* --------------------------------- App ---------------------------------- */
 export default function App() {
   const [ready, setReady] = useState(false);
 
-  // Split outputs so upload doesn’t pollute Ask console
+  // Ask console
   const [askResp, setAskResp] = useState<string>("");
   const [uploadResp, setUploadResp] = useState<string>("");
 
@@ -208,7 +200,6 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // NEW: Ask console config
   const [tier, setTier] = useState<Tier>("human");
   const [ab, setAb] = useState<ABVariant>(() => (Math.random() < 0.5 ? "A" : "B"));
   const [skill, setSkill] = useState<Skill>("summarize");
@@ -217,12 +208,11 @@ export default function App() {
   const [attachLastUpload, setAttachLastUpload] = useState<boolean>(false);
   const [lastUploadKey, setLastUploadKey] = useState<string | null>(null);
 
-  // Poll/download UI state (kept for other features)
+  // Poll/download UI state
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const isDone = job?.status === "done";
 
   const engineRef = useRef<any>(null);
@@ -253,7 +243,10 @@ export default function App() {
   // Resolved API base for child components (UsageFeed)
   const [resolvedBase, setResolvedBase] = useState<string>("");
 
-  // ---------- helpers ----------
+  // Optional: balance for TopNav pill
+  const [credits, setCredits] = useState<number | undefined>(undefined);
+
+  /* ---------- helpers ---------- */
   const cleanHeaders = useCallback(() => {
     const h: Record<string, string> = { Accept: "application/json" };
     return h;
@@ -356,7 +349,6 @@ export default function App() {
       if (pollAbort.current) pollAbort.current.abort();
       if (pollTimer.current) window.clearTimeout(pollTimer.current);
       if (askAbortRef.current) askAbortRef.current.abort();
-      // stop STT if running
       try { sttRef.current?.stop(); } catch {}
     };
   }, []);
@@ -373,26 +365,21 @@ export default function App() {
     }
   }, [startPolling]);
 
-  // --- Optional: when restored job finishes, hint (or auto-download) ---
   useEffect(() => {
     if (jobId && isDone) {
       setInfo("Job finished. You can download the result.");
-      // void onDownload(); // enable to auto-download
     }
-  }, [jobId, isDone, onDownload]);
+  }, [jobId, isDone]);
 
   // ---------- health probe & boot ----------
   useEffect(() => {
     (async () => {
       try {
         await ensureApiBase();
-        // expose resolved base to children like <UsageFeed/>
         setResolvedBase((window as any).__apiBase ?? "");
       } catch {}
 
-      try {
-        await (window as any).__cogAuthReady;
-      } catch {}
+      try { await (window as any).__cogAuthReady; } catch {}
 
       const paths = ["/ready", "/ready", "/health", "/healthz", "/healthz", "/healthz", "/api/v1/healthz"];
       let reported = false;
@@ -409,30 +396,25 @@ export default function App() {
           setHealth(JSON.stringify(data));
           reported = true;
           break;
-        } catch {
-          // try next
-        }
+        } catch {}
       }
       setHealth((h) => (reported ? h : "down"));
     })();
 
-    // WebLLM (best-effort) — dynamic import + loose typing to avoid TS signature drift
+    // web-llm (best-effort)
     (async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mod: any = await import("@mlc-ai/web-llm");
-        // Keep your original runtime options; cast as any to bypass shaky type defs.
-        engineRef.current = await mod.CreateWebWorkerMLCEngine(
+        engineRef.current = await (mod as any).CreateWebWorkerMLCEngine(
           new URL("/"),
           { model: "Llama-3.1-8B-Instruct-q4f16_1-MLC" } as any
         );
         setReady(true);
-      } catch {
-        // Silent: leave askResp unchanged on failure to init web-llm
-      }
+      } catch {}
     })();
 
-    // Turnstile widget (invisible) + fallback
+    // Turnstile widget
     let iv: any = null;
     let fb: any = null;
 
@@ -445,12 +427,8 @@ export default function App() {
             size: "flexible",
           });
 
-          if (fb) {
-            clearTimeout(fb);
-            fb = null;
-          }
-          clearInterval(iv);
-          iv = null;
+          if (fb) { clearTimeout(fb); fb = null; }
+          clearInterval(iv); iv = null;
           void refreshJwt();
         }
       }, 200);
@@ -477,9 +455,7 @@ export default function App() {
     if (tsExecRef.current) return tsExecRef.current;
     tsExecRef.current = new Promise<string>((resolve) => {
       try {
-        try {
-          window.turnstile.reset(widRef.current);
-        } catch {}
+        try { window.turnstile.reset(widRef.current); } catch {}
         window.turnstile.execute(widRef.current, {
           async: true,
           action: "guest",
@@ -488,13 +464,11 @@ export default function App() {
       } catch {
         resolve("");
       }
-    }).finally(() => {
-      tsExecRef.current = null;
-    });
+    }).finally(() => { tsExecRef.current = null; });
     return tsExecRef.current;
   };
 
-  // ---- Voice Dictation (SpeechRecognition) ----
+  // ---- Voice Dictation ----
   function getRecognizer(): SpeechRecognition | null {
     try {
       if (sttRef.current) return sttRef.current;
@@ -511,10 +485,7 @@ export default function App() {
           const r = ev.results[i];
           if (r.isFinal) txt += r[0].transcript;
         }
-        if (txt) {
-          // append to current prompt with a space
-          setPrompt((p) => (p ? (p.trimEnd() + " " + txt).trim() : txt));
-        }
+        if (txt) setPrompt((p) => (p ? (p.trimEnd() + " " + txt).trim() : txt));
       };
 
       rec.onend = () => setListening(false);
@@ -522,50 +493,26 @@ export default function App() {
 
       sttRef.current = rec;
       return rec;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
-
   function toggleDictation() {
     const rec = getRecognizer();
-    if (!rec) {
-      alert("Voice dictation is not available in this browser.");
-      return;
-    }
-    if (listening) {
-      try { rec.stop(); } catch {}
-      setListening(false);
-      return;
-    }
-    try {
-      rec.start();
-      setListening(true);
-    } catch {
-      setListening(false);
-    }
+    if (!rec) return alert("Voice dictation is not available in this browser.");
+    if (listening) { try { rec.stop(); } catch {} setListening(false); return; }
+    try { rec.start(); setListening(true); } catch { setListening(false); }
   }
-
-  // Optional hotkey: Alt+M toggles dictation
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === "m" || e.key === "M")) {
-        e.preventDefault();
-        toggleDictation();
-      }
+      if (e.altKey && (e.key === "m" || e.key === "M")) { e.preventDefault(); toggleDictation(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [listening]);
 
-  // ---- Guest auth: call the Worker endpoints that exist (POST only) ----
+  // ---- Guest auth ----
   async function fetchGuestTokenMulti(): Promise<{ token: string; ttl: number } | null> {
     let ts = "";
-    try {
-      ts = await getTurnstileToken();
-    } catch {
-      ts = "";
-    }
+    try { ts = await getTurnstileToken(); } catch { ts = ""; }
 
     const baseHeaders: Record<string, string> = {
       Accept: "application/json",
@@ -593,9 +540,7 @@ export default function App() {
 
         const parsed = extractToken(data);
         if (parsed?.token) return parsed;
-      } catch {
-        // try next
-      }
+      } catch {}
     }
     return null;
   }
@@ -617,8 +562,7 @@ export default function App() {
       const next = Math.max(10, got.ttl - 60);
       refreshTimer.current = setTimeout(refreshJwt, next * 1000);
     } catch (e: any) {
-      const msg = e?.message || e;
-      setAuthMsg(`auth error: ${msg} - retrying in 30s`);
+      setAuthMsg(`auth error: ${(e?.message || e)} - retrying in 30s`);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(refreshJwt, 30000);
     } finally {
@@ -626,13 +570,36 @@ export default function App() {
     }
   };
 
+  // ---------- Credits for TopNav ----------
+  const loadBalance = useCallback(async () => {
+    try {
+      const email = readUserEmail();
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        ...(email ? { "X-User-Email": email } : {}),
+        ...(jwtRef.current ? { Authorization: `Bearer ${jwtRef.current}` } : {}),
+      };
+      const r = await fetch(apiUrl("/api/billing/balance"), {
+        headers,
+        credentials: "include",
+        mode: "cors",
+      });
+      if (!r.ok) throw new Error("balance fetch failed");
+      const j = await r.json();
+      const val =
+        typeof j?.credits === "number"
+          ? j.credits
+          : (Number(j?.balance_credits) || Number(j?.balance) || 0);
+      if (Number.isFinite(val)) setCredits(Number(val));
+    } catch {
+      setCredits(undefined);
+    }
+  }, []);
+  useEffect(() => { if (authReady) void loadBalance(); }, [authReady, loadBalance]);
+
   // ---------- Ask (advanced) ----------
   const ask = async () => {
-    if (askAbortRef.current) {
-      // cancel any in-flight ask
-      askAbortRef.current.abort();
-      askAbortRef.current = null;
-    }
+    if (askAbortRef.current) { askAbortRef.current.abort(); askAbortRef.current = null; }
     const ac = new AbortController();
     askAbortRef.current = ac;
 
@@ -643,37 +610,24 @@ export default function App() {
     const clientId = getOrCreateClientId();
     const ts = Date.now().toString();
 
-    // Optionally attach last uploaded file key as context
     const attachments =
       attachLastUpload && lastUploadKey
         ? [{ storage: "r2", key: lastUploadKey }]
         : [];
 
-    // Enable richer skills based on selection (telemetry-only hint for server)
     const skillsEnabled = (() => {
       switch (skill) {
-        case "codegen":
-          return ["codegen", "reasoning", "tests", "lint"];
-        case "refactor":
-          return ["refactor", "reasoning"];
-        case "testgen":
-          return ["tests", "coverage", "reasoning"];
-        case "api-design":
-          return ["api-design", "schema", "reasoning"];
-        case "sql":
-          return ["sql", "analytics", "reasoning"];
-        case "data-viz":
-          return ["data-viz", "explain", "reasoning"];
-        case "translate":
-          return ["translate", "reasoning"];
-        case "vision-analyze":
-          return ["vision", "reasoning"];
-        case "plan":
-          return ["plan", "agents", "reasoning"];
-        case "explain":
-          return ["explain", "reasoning"];
-        default:
-          return ["summarization", "reasoning"];
+        case "codegen": return ["codegen", "reasoning", "tests", "lint"];
+        case "refactor": return ["refactor", "reasoning"];
+        case "testgen": return ["tests", "coverage", "reasoning"];
+        case "api-design": return ["api-design", "schema", "reasoning"];
+        case "sql": return ["sql", "analytics", "reasoning"];
+        case "data-viz": return ["data-viz", "explain", "reasoning"];
+        case "translate": return ["translate", "reasoning"];
+        case "vision-analyze": return ["vision", "reasoning"];
+        case "plan": return ["plan", "agents", "reasoning"];
+        case "explain": return ["explain", "reasoning"];
+        default: return ["summarization", "reasoning"];
       }
     })();
 
@@ -691,8 +645,6 @@ export default function App() {
       };
       if (email) headers["X-User-Email"] = email;
       if (jwtRef.current) headers["Authorization"] = `Bearer ${jwtRef.current}`;
-
-      // Streaming hint — server may ignore
       if (stream) headers["Accept"] = "text/event-stream";
 
       const body = {
@@ -701,8 +653,7 @@ export default function App() {
         system: sysPrompt || undefined,
         attachments,
         telemetry: {
-          tier,
-          ab,
+          tier, ab,
           client_id: clientId,
           client_ts: ts,
           source: "ask_console",
@@ -729,7 +680,6 @@ export default function App() {
       const isJSON = ct.includes("application/json");
       const isSSE = ct.includes("text/event-stream");
 
-      // Try progressive read if not JSON and body is streamable
       if (stream && r.ok && r.body && !isJSON) {
         const reader = r.body.getReader();
         const decoder = new TextDecoder();
@@ -740,7 +690,6 @@ export default function App() {
           buffer += decoder.decode(value, { stream: true });
 
           if (isSSE) {
-            // Minimal SSE "data:" line parsing
             const parts = buffer.split("\n\n");
             for (let i = 0; i < parts.length - 1; i++) {
               const chunk = parts[i]
@@ -752,17 +701,14 @@ export default function App() {
             }
             buffer = parts[parts.length - 1];
           } else {
-            // Plain text streaming
             setAskResp((prev) => prev + buffer);
             buffer = "";
           }
         }
-        // append billing line if provided
         if (used) setAskResp((prev) => prev + `\n\n[used: ${used} | balance: ${bal}]`);
         return;
       }
 
-      // Fallback: standard JSON envelope { result: { content } }
       const j = await r.json().catch(async () => ({ raw: await r.text() }));
       setAskResp(
         (j?.result?.content ?? j?.raw ?? JSON.stringify(j)) +
@@ -776,7 +722,7 @@ export default function App() {
     }
   };
 
-  // ---------- UPDATED: direct R2 upload via /api/upload/direct ----------
+  // ---------- Direct upload via /api/upload/direct ----------
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
@@ -796,7 +742,6 @@ export default function App() {
 
       const r = await fetch(url, {
         method: "POST",
-        // NOTE: send RAW file body (no FormData). Browser will set Content-Length.
         headers: {
           Authorization: `Bearer ${jwtRef.current}`,
           ...(email ? { "X-User-Email": email } : {}),
@@ -809,21 +754,16 @@ export default function App() {
 
       const ct = r.headers.get("content-type") || "";
       const asJson = ct.includes("application/json");
-      const data: UploadResp = asJson ? await r.json() : ({ error: await r.text() } as any);
+      const data: any = asJson ? await r.json() : ({ error: await r.text() } as any);
 
-      if (!r.ok || (data as any).error) {
-        const msg =
-          (data as any).error || `${r.status} ${r.statusText}` || "upload failed";
+      if (!r.ok || data?.error) {
+        const msg = data?.error || `${r.status} ${r.statusText}` || "upload failed";
         throw new Error(msg);
       }
 
-      const ok = data as Extract<UploadResp, { ok: true }>;
-      setInfo(
-        `Uploaded ?  key=${ok.key}  size=${ok.size}  ` +
-          (ok.content_type ? `ct=${ok.content_type}` : "")
-      );
-      setUploadResp(JSON.stringify(ok, null, 2));
-      setLastUploadKey(ok.key || null);
+      setInfo(`Uploaded âœ“  key=${data.key}  size=${data.size}  ${data.content_type ? `ct=${data.content_type}` : ""}`);
+      setUploadResp(JSON.stringify(data, null, 2));
+      setLastUploadKey(data.key || null);
     } catch (e: any) {
       const msg = (e?.message || e)?.toString?.() || "";
       if (msg.toLowerCase().includes("failed to fetch")) {
@@ -838,251 +778,258 @@ export default function App() {
     }
   };
 
-  // ---------- UI ----------
+  /* ---------- derived view state ---------- */
+  const healthObj = useMemo(() => {
+    try { return JSON.parse(health || "{}"); } catch { return null; }
+  }, [health]);
+  const apiOk = !!(healthObj && typeof healthObj === "object" && healthObj.ok);
+
+  /* ---------- UI ---------- */
   return (
-    <div style={{ maxWidth: 980, margin: "40px auto", fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <h1 style={{ margin: 0 }}>Cognomega</h1>
-        <div style={{ marginLeft: "auto" }}>
+    <ThemeShell
+      header={
+        <TopNav
+          apiOk={apiOk}
+          provider={healthObj?.provider}
+          model={healthObj?.model}
+          credits={typeof credits === "number" ? credits : undefined}
+          onRefreshCredits={loadBalance}
+        />
+      }
+      maxWidth="7xl"
+    >
+      {/* Status pills (left of hero) */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="rounded-full border border-white/40 bg-white/60 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200">
+          API readiness: {health}
+        </div>
+        <div className="rounded-full border border-white/40 bg-white/60 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200">
+          Auth: {authMsg}
+        </div>
+        <div className="hidden rounded-full border border-white/40 bg-white/60 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 sm:block">
+          App is calling: {(resolvedBase && String(resolvedBase)) || "(base not resolved yet)"}
+        </div>
+        <div className="ml-auto">
           <CreditPill />
         </div>
       </div>
 
-      <p>API readiness: {health}</p>
-      <p>Auth: {authMsg}</p>
-      <p>App is calling: {(resolvedBase && String(resolvedBase)) || "(base not resolved yet)"}</p>
-
-      {/* Ask console with Tier + A/B + Skill + Streaming + System Prompt + Attachment */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 250px", gap: 12, marginTop: 12 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <textarea
-            data-voice-hint="Type your prompt. Press Ctrl or Cmd + Enter to submit. You can also choose an Intelligence Tier in the builder or use the Ask box here."
-            style={{
-              flex: 1,
-              padding: 8,
-              minHeight: 140,
-              resize: "vertical",
-              lineHeight: 1.4,
-              fontFamily: "inherit",
-              fontSize: 14,
-            }}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Ask anything...  (Ctrl/Cmd + Enter to send)"
-            onKeyDown={(e) => {
-              // Allow plain Enter for newlines; submit on Ctrl+Enter (Win/Linux) or Cmd+Enter (macOS).
-              // @ts-expect-error: nativeEvent may have isComposing
-              if (e.isComposing || e.nativeEvent?.isComposing) return;
-              const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
-              if (isEnter && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                void ask();
-              }
-            }}
-          />
-
-          {/* System prompt (advanced) */}
-          <details>
-            <summary style={{ cursor: "pointer", fontSize: 12, color: "#555" }}>
-              Advanced options
-            </summary>
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={{ fontSize: 12, color: "#444" }}>System Prompt (optional)</label>
-              <textarea
-                value={sysPrompt}
-                onChange={(e) => setSysPrompt(e.target.value)}
-                style={{ padding: 8, borderRadius: 6, border: "1px solid #e5e7eb", minHeight: 80 }}
-                placeholder="You are Cognomega Super Intelligence. Be helpful, precise, and production-grade..."
-              />
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={attachLastUpload}
-                  onChange={(e) => setAttachLastUpload(e.target.checked)}
-                  disabled={!lastUploadKey}
-                />
-                <span style={{ fontSize: 12 }}>
-                  Attach last uploaded file to this request {lastUploadKey ? `(key: ${lastUploadKey})` : "(no recent upload)"}
-                </span>
-              </label>
+      {/* Ask console */}
+      <section className="glass-card space-y-3 px-5 py-5">
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+              Ask console
             </div>
-          </details>
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              data-role="ask-button"
-              data-voice-hint="Send your prompt to Cognomega. We’ll record telemetry and credits for your selected intelligence tier."
-              onClick={ask}
-            >
-              Ask
-            </button>
-            <button
-              data-role="mic"
-              data-voice-hint="Start voice dictation. Speak your prompt and we’ll transcribe it here."
-              onClick={toggleDictation}
-              title={listening ? "Stop voice dictation" : "Start voice dictation"}
-              style={{ opacity: listening ? 1 : 0.95, border: listening ? "1px solid #22c55e" : undefined }}
-            >
-              {listening ? "Stop Mic" : "Voice"}
-            </button>
-            <button
-              onClick={() => {
-                if (askAbortRef.current) askAbortRef.current.abort();
-              }}
-              style={{ opacity: 0.9 }}
-              title="Abort current request"
-            >
-              Abort
-            </button>
-            <button
-              onClick={() => {
-                const blob = new Blob([askResp || ""], { type: "text/markdown;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `ask_${Date.now()}.md`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              Export .md
-            </button>
-            <button
-              onClick={() => navigator.clipboard.writeText(askResp || "").catch(() => {})}
-              title="Copy answer"
-            >
-              Copy
-            </button>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+              Talk to Cognomega Super-Intelligence
+            </h2>
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <label style={{ fontSize: 12, color: "#444" }}>Skill</label>
-          <select
-            value={skill}
-            onChange={(e) => setSkill(e.target.value as Skill)}
-            style={{ padding: 6, borderRadius: 6, border: "1px solid #e5e7eb" }}
-          >
-            {SKILLS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+        <div className="grid gap-3 lg:grid-cols-[1fr_260px]">
+          {/* left pane */}
+          <div className="flex flex-col gap-3">
+            <textarea
+              className={`${fieldCls} min-h-[140px]`}
+              data-voice-hint="Type your prompt. Press Ctrl or Cmd + Enter to submit."
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Ask anythingâ€¦  (Ctrl/Cmd + Enter to send)"
+              onKeyDown={(e) => {
+                // @ts-expect-error: nativeEvent may have isComposing
+                if (e.isComposing || e.nativeEvent?.isComposing) return;
+                const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
+                if (isEnter && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  void ask();
+                }
+              }}
+            />
 
-          <label style={{ fontSize: 12, color: "#444", marginTop: 6 }}>Intelligence Tier</label>
-          <select
-            value={tier}
-            onChange={(e) => setTier(e.target.value as Tier)}
-            style={{ padding: 6, borderRadius: 6, border: "1px solid #e5e7eb" }}
-          >
-            <option value="human">Human</option>
-            <option value="advanced">Advanced</option>
-            <option value="super">Super</option>
-          </select>
+            <details>
+              <summary className="cursor-pointer text-sm text-slate-600 dark:text-slate-300">
+                Advanced options
+              </summary>
+              <div className="mt-2 space-y-2">
+                <label className="text-xs text-slate-500 dark:text-slate-400">System Prompt (optional)</label>
+                <textarea
+                  className={`${fieldCls} min-h-[80px]`}
+                  value={sysPrompt}
+                  onChange={(e) => setSysPrompt(e.target.value)}
+                  placeholder="You are Cognomega Super Intelligence. Be helpful, precise, and production-gradeâ€¦"
+                />
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-white/40 bg-white/80 text-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border-white/20 dark:bg-slate-900/70 dark:text-indigo-300"
+                    checked={attachLastUpload}
+                    onChange={(e) => setAttachLastUpload(e.target.checked)}
+                    disabled={!lastUploadKey}
+                  />
+                  <span className="text-sm">
+                    Attach last uploaded file {lastUploadKey ? `(key: ${lastUploadKey})` : "(none)"}
+                  </span>
+                </label>
+              </div>
+            </details>
 
-          <label style={{ fontSize: 12, color: "#444", marginTop: 6 }}>A/B Variant</label>
-          <select
-            value={ab}
-            onChange={(e) => setAb(e.target.value as ABVariant)}
-            style={{ padding: 6, borderRadius: 6, border: "1px solid #e5e7eb" }}
-          >
-            <option value="A">A</option>
-            <option value="B">B</option>
-          </select>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-base btn-primary" data-role="ask-button" onClick={ask}>
+                Ask
+              </button>
+              <button
+                className="btn-base btn-secondary"
+                data-role="mic"
+                onClick={toggleDictation}
+                title={listening ? "Stop voice dictation" : "Start voice dictation"}
+              >
+                {listening ? "Stop Mic" : "Voice"}
+              </button>
+              <button
+                className="btn-base btn-ghost"
+                title="Abort current request"
+                onClick={() => askAbortRef.current?.abort()}
+              >
+                Abort
+              </button>
+              <button
+                className="btn-base btn-ghost"
+                onClick={() => {
+                  const blob = new Blob([askResp || ""], { type: "text/markdown;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `ask_${Date.now()}.md`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Export .md
+              </button>
+              <button
+                className="btn-base btn-ghost"
+                onClick={() => navigator.clipboard.writeText(askResp || "").catch(() => {})}
+                title="Copy answer"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
 
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-            <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} />
-            <span style={{ fontSize: 12, color: "#444" }}>Enable streaming (if supported)</span>
-          </label>
+          {/* right pane */}
+          <div className="flex flex-col gap-3">
+            <label className="text-xs text-slate-500 dark:text-slate-400">Skill</label>
+            <select
+              className={fieldCls}
+              value={skill}
+              onChange={(e) => setSkill(e.target.value as Skill)}
+            >
+              {SKILLS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+
+            <label className="text-xs text-slate-500 dark:text-slate-400">Intelligence Tier</label>
+            <select
+              className={fieldCls}
+              value={tier}
+              onChange={(e) => setTier(e.target.value as Tier)}
+            >
+              <option value="human">Human</option>
+              <option value="advanced">Advanced</option>
+              <option value="super">Super</option>
+            </select>
+
+            <label className="text-xs text-slate-500 dark:text-slate-400">A/B Variant</label>
+            <select
+              className={fieldCls}
+              value={ab}
+              onChange={(e) => setAb(e.target.value as ABVariant)}
+            >
+              <option value="A">A</option>
+              <option value="B">B</option>
+            </select>
+
+            <label className="mt-1 flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-white/40 bg-white/80 text-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border-white/20 dark:bg-slate-900/70 dark:text-indigo-300"
+                checked={stream}
+                onChange={(e) => setStream(e.target.checked)}
+              />
+              <span className="text-sm text-slate-600 dark:text-slate-300">Enable streaming (if supported)</span>
+            </label>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Real-time App Builder launcher */}
-      <div
-        data-role="builder"
-        data-voice-hint="Open the real-time App Builder. It generates apps from your description and pages."
-        style={{
-          marginTop: 12,
-          padding: 12,
-          border: "1px solid #e5e7eb",
-          borderRadius: 8,
-        }}
-      >
+      {/* Real-time App Builder */}
+      <section className="mt-4">
         <LaunchInBuilder
           defaultName="Sketch Prototype"
           defaultPages="Home,Dashboard,Chat"
           defaultDesc={prompt || "From Sketch to App"}
         />
-      </div>
+      </section>
 
       {/* Ask output console */}
-      <pre
-        style={{
-          whiteSpace: "pre-wrap",
-          background: "#111",
-          color: "#0f0",
-          padding: 12,
-          marginTop: 12,
-          minHeight: 120,
-        }}
-      >
-        {askResp}
-      </pre>
-
-      {/* Recent usage (30s refresh, quiet on preview due to CORS) */}
-      <UsageFeed
-        email={readUserEmail() || ""}
-        apiBase={resolvedBase}
-        refreshMs={30000} // 30s to avoid hammering if backend hiccups
-      />
-
-      <hr />
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <label>Upload file (to R2 via API): </label>
-        <input type="file" ref={fileRef} required />
-        <button
-          type="button"
-          data-role="upload-button"
-          data-voice-hint="Upload a file directly to secure R2 storage. We’ll return a key you can reference in skills."
-          onClick={upload}
-          disabled={!authReady || uploading}
-        >
-          {uploading ? "Uploading..." : "Upload"}
-        </button>
-        {lastUploadKey && (
-          <span style={{ fontSize: 12, color: "#444" }}>
-            Last upload key:&nbsp;
-            <code style={{ background: "#f3f4f6", padding: "2px 4px", borderRadius: 4 }}>
-              {lastUploadKey}
-            </code>
-          </span>
-        )}
-      </div>
-
-      {/* Inline upload status + separate output box */}
-      {info && <div style={{ color: "#065f46", marginTop: 6 }}>{info}</div>}
-      {error && <div style={{ color: "#991b1b", marginTop: 6 }}>{error}</div>}
-      {uploadResp && (
-        <pre
-          style={{
-            whiteSpace: "pre-wrap",
-            background: "#111",
-            color: "#0ff",
-            padding: 12,
-            marginTop: 12,
-          }}
-        >
-          {uploadResp}
+      <section className="mt-4">
+        <pre className="glass-surface-soft rounded-2xl border border-white/40 bg-white/60 p-4 text-sm text-slate-800 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 whitespace-pre-wrap">
+          {askResp}
         </pre>
-      )}
+      </section>
+
+      {/* Recent usage */}
+      <section className="mt-4">
+        <UsageFeed
+          email={readUserEmail() || ""}
+          apiBase={resolvedBase}
+          refreshMs={30000}
+        />
+      </section>
+
+      {/* Upload */}
+      <section className="mt-4 glass-surface-soft rounded-2xl border border-white/40 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm">Upload file (to R2 via API):</label>
+          <input className="text-sm" type="file" ref={fileRef} required />
+          <button
+            type="button"
+            className="btn-base btn-secondary"
+            data-role="upload-button"
+            onClick={upload}
+            disabled={!authReady || uploading}
+          >
+            {uploading ? "Uploadingâ€¦" : "Upload"}
+          </button>
+          {lastUploadKey && (
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              Last upload key:&nbsp;
+              <code className="rounded bg-white/60 px-1 py-0.5 dark:bg-slate-800/60">
+                {lastUploadKey}
+              </code>
+            </span>
+          )}
+        </div>
+
+        {info && <div className="mt-2 message-bubble" data-tone="info">{info}</div>}
+        {error && <div className="mt-2 message-bubble" data-tone="error">{error}</div>}
+        {uploadResp && (
+          <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-black/90 p-3 text-cyan-200">
+            {uploadResp}
+          </pre>
+        )}
+      </section>
 
       {/* Invisible Turnstile container */}
       <div ref={tsDivRef} />
 
-      {/* Voice guidance toggle & selectors */}
+      {/* Voice guidance */}
       <VoiceGuide
         enabledByDefault={false}
         position="bottom-right"
@@ -1095,9 +1042,9 @@ export default function App() {
           "[data-role='upload-button']":
             "Upload a file to R2 and use the returned key in skills.",
           "[data-role='mic']":
-            "Start voice dictation. Speak your prompt and we’ll transcribe it here.",
+            "Start voice dictation. Speak your prompt and weâ€™ll transcribe it here.",
         }}
       />
-    </div>
+    </ThemeShell>
   );
 }

@@ -113,3 +113,28 @@
 .table-glass{ width:100%; border-collapse:collapse; font-size:14px; color:var(--text);}
 .table-glass thead{ background: rgba(255,255,255,.5); color:#0b1220;}
 .table-glass th, .table-glass td{ padding:.65rem .75rem; border-bottom:1px solid rgba(255,255,255,.28); }
+/* ---- Theme overrides via html.theme-light / html.theme-dark ---- */
+:root.theme-light{
+  --bg:#f7f7fb; --text:#0b1220; --muted:#495062;
+  --card: rgba(255,255,255,.9);
+  --glass-bd: rgba(0,0,0,.08);
+  --glass-bg: rgba(255,255,255,.8);
+  --glass-bg-dark: rgba(17,24,39,.6);
+  --shadow: 0 8px 24px rgba(2,6,23,.08), inset 0 1px 0 rgba(255,255,255,.9);
+}
+:root.theme-dark{
+  --bg: #0b1020; --text:#e5e7eb; --muted:#9aa1b2;
+  --card: rgba(255,255,255,.08);
+  --glass-bd: rgba(255,255,255,.28);
+  --glass-bg: rgba(2,6,23,.55);
+  --glass-bg-dark: rgba(2,6,23,.55);
+  --shadow: 0 10px 30px rgba(2,6,23,.35), inset 0 1px 0 rgba(255,255,255,.1);
+}
+
+/* Branded gradient text */
+.brand-gradient{
+  background: linear-gradient(90deg, var(--g1), var(--g2), var(--g4));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
