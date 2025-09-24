@@ -831,12 +831,14 @@ export default function App() {
           {/* left pane */}
           <div className="flex flex-col gap-3">
             <textarea
-              className={`${fieldCls} min-h-[140px]`}
-              data-voice-hint="Type your prompt. Press Ctrl or Cmd + Enter to submit."
+              className="ask-textarea"
+              data-voice-hint="Type your prompt. Press Ctrl or Cmd + Enter to submit. You can also choose an Intelligence Tier in the builder or use the Ask box here."
+              rows={8}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Ask anything…  (Ctrl/Cmd + Enter to send)"
               onKeyDown={(e) => {
+                // Allow plain Enter for newlines; submit on Ctrl/Cmd+Enter.
                 // @ts-expect-error: nativeEvent may have isComposing
                 if (e.isComposing || e.nativeEvent?.isComposing) return;
                 const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
@@ -846,6 +848,7 @@ export default function App() {
                 }
               }}
             />
+
 
             <details>
               <summary className="cursor-pointer text-sm text-slate-600 dark:text-slate-300">

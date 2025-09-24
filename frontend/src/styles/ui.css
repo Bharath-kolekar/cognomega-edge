@@ -138,3 +138,57 @@
   background-clip: text;
   color: transparent;
 }
+
+/* Attractive Ask textarea */
+.ask-textarea{
+  --ta-bg: color-mix(in oklab, white 82%, transparent);
+  --ta-bg-dark: color-mix(in oklab, #0b1220 78%, transparent);
+  --ta-text: #0b1020;
+  --ta-text-dark: #e6ecff;
+  --ta-border1: #8b5cf6; /* indigo-500 */
+  --ta-border2: #06b6d4; /* cyan-500 */
+
+  width: 100%;
+  min-height: 160px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--ta-bg), var(--ta-bg)) padding-box,
+    linear-gradient(135deg, var(--ta-border1), var(--ta-border2)) border-box;
+  color: var(--ta-text);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.6),
+    0 10px 30px rgba(99,102,241,.08);
+  outline: none;
+  resize: vertical;
+  transition: box-shadow .2s ease, background .2s ease, transform .05s ease;
+}
+
+.dark .ask-textarea{
+  background:
+    linear-gradient(var(--ta-bg-dark), var(--ta-bg-dark)) padding-box,
+    linear-gradient(135deg, var(--ta-border1), var(--ta-border2)) border-box;
+  color: var(--ta-text-dark);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 10px 30px rgba(6,182,212,.12);
+}
+
+.ask-textarea::placeholder{
+  color: #64748b; /* slate-500 */
+}
+.dark .ask-textarea::placeholder{
+  color: #94a3b8; /* slate-400 */
+}
+
+.ask-textarea:focus-visible{
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--ta-border1) 22%, transparent),
+    0 12px 36px rgba(6,182,212,.20);
+}
+
+.ask-textarea:disabled{
+  opacity: .6;
+  cursor: not-allowed;
+}
