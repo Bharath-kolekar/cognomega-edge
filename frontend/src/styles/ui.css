@@ -1,51 +1,71 @@
 /* Aurora/Glass UI kit — Fortune-50 friendly (AA contrast, reduced motion respected) */
 
-:root{
-  /* base palette */
-  --bg: #0b1020;            /* deep night */
-  --bg-soft: rgba(255,255,255,.06);
-  --text: #e5e7eb;          /* slate-200 */
-  --muted: #9aa1b2;         /* slate-400-ish */
-  --card: rgba(255,255,255,.08);
-  --ring: #8b5cf6;          /* indigo-500 */
+/* ---------------- Base (defaults to dark) ---------------- */
+:root {
+  /* base palette (dark) */
+  --bg-start: #0b1220; /* deep navy */
+  --bg-end:   #111827; /* slate-900 */
+  --bg:       #0b1020; /* legacy token for aurora-bg */
+  --text:     #e5e7eb; /* slate-200 */
+  --muted:    #9aa1b2; /* slate-400-ish */
+
+  /* glass/card surfaces */
+  --card-bg:        rgba(15,23,42,0.72);
+  --glass-bd:       rgba(255,255,255,.28);
+  --glass-bg:       rgba(2,6,23,.55);
+  --glass-bg-dark:  rgba(2,6,23,.55);
 
   /* brand gradient */
   --g1:#7c3aed; --g2:#06b6d4; --g3:#22c55e; --g4:#60a5fa;
 
-  /* surfaces */
-  --glass-bd: rgba(255,255,255,.28);
-  --glass-bg: rgba(255,255,255,.65);
-  --glass-bg-dark: rgba(2,6,23,.55);
+  /* focus ring */
+  --ring: #8b5cf6; /* indigo-500 */
 
-  /* tokens */
+  /* misc tokens */
   --rad: 16px;
   --shadow: 0 10px 30px rgba(2,6,23,.35), inset 0 1px 0 rgba(255,255,255,.1);
-  --speed: .18s;            /* snappy but not flashy */
+  --speed: .18s;
+
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: light){
-  :root{
-    --bg:#f7f7fb; --text:#0b1220; --muted:#495062;
-    --card: rgba(255,255,255,.9);
-    --glass-bd: rgba(0,0,0,.08);
-    --glass-bg: rgba(255,255,255,.8);
-    --glass-bg-dark: rgba(17,24,39,.6);
-    --shadow: 0 8px 24px rgba(2,6,23,.08), inset 0 1px 0 rgba(255,255,255,.9);
-  }
+/* ---------------- Light theme overrides ---------------- */
+:root[data-theme="light"] {
+  --bg-start: #f6ecff;  /* lilac */
+  --bg-end:   #e6fbff;  /* cyan tint */
+  --bg: #f7f7fb;
+
+  --text:  #0b1220;     /* slate-950-ish */
+  --muted: #495062;     /* slate-600 */
+
+  --card-bg:       rgba(255,255,255,0.78);
+  --glass-bd:      rgba(0,0,0,.08);
+  --glass-bg:      rgba(255,255,255,.80);
+  --glass-bg-dark: rgba(17,24,39,.60);
+
+  --shadow: 0 8px 24px rgba(2,6,23,.08), inset 0 1px 0 rgba(255,255,255,.9);
+
+  color-scheme: light;
 }
 
-/* Page aurora background (applied to <body class="aurora-bg">) */
+/* ---------------- Page background ---------------- */
+body {
+  background: linear-gradient(180deg, var(--bg-start), var(--bg-end));
+  color: var(--text);
+}
+
+/* Optional richer background if container has .aurora-bg */
 .aurora-bg{
   min-height: 100dvh;
   background:
     radial-gradient(1000px 500px at 10% 5%, rgba(124,58,237,.20), transparent 60%),
-    radial-gradient(900px 400px at 90% 4%, rgba(6,182,212,.18), transparent 55%),
+    radial-gradient(900px 400px at 90% 4%,  rgba(6,182,212,.18), transparent 55%),
     radial-gradient(800px 420px at 50% 100%, rgba(96,165,250,.16), transparent 60%),
     linear-gradient(180deg, rgba(255,255,255,.08), transparent 20%),
     var(--bg);
 }
 
-/* Glass containers */
+/* ---------------- Glass containers ---------------- */
 .glass-card{
   border-radius: calc(var(--rad) + 8px);
   border: 1px solid var(--glass-bd);
@@ -62,7 +82,7 @@
   backdrop-filter: blur(12px);
 }
 
-/* Buttons */
+/* ---------------- Buttons ---------------- */
 .btn-base{
   --pad: .65rem 1rem;
   display:inline-flex; align-items:center; gap:.5rem;
@@ -90,10 +110,10 @@
 }
 .btn-ghost:hover{ background: rgba(255,255,255,.06); }
 
-/* Shadows */
+/* ---------------- Shadows ---------------- */
 .shadow-glass{ box-shadow: var(--shadow); }
 
-/* Message bubble (info/error/ok) */
+/* ---------------- Message bubble (info/error/ok) ---------------- */
 .message-bubble{
   --tone-bg: rgba(99,102,241,.12);
   --tone-bd: rgba(99,102,241,.35);
@@ -105,33 +125,16 @@
 .message-bubble[data-tone="error"]{ --tone-bg: rgba(239,68,68,.12); --tone-bd: rgba(239,68,68,.35); --tone-fg:#991b1b; }
 .message-bubble[data-tone="info"]{  --tone-bg: rgba(59,130,246,.12); --tone-bd: rgba(59,130,246,.35); --tone-fg:#1e3a8a; }
 
-/* Token/credit badges used in UsageFeed */
+/* ---------------- Token/credit badges ---------------- */
 .badge-token{ background:rgba(99,102,241,.15); color:#4338ca; border-radius:999px; padding:.25rem .5rem; font:600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .badge-credit{ background:rgba(6,182,212,.15); color:#0e7490; border-radius:999px; padding:.25rem .6rem; font:600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-/* Table helpers for glass tables */
+/* ---------------- Table helpers ---------------- */
 .table-glass{ width:100%; border-collapse:collapse; font-size:14px; color:var(--text);}
 .table-glass thead{ background: rgba(255,255,255,.5); color:#0b1220;}
 .table-glass th, .table-glass td{ padding:.65rem .75rem; border-bottom:1px solid rgba(255,255,255,.28); }
-/* ---- Theme overrides via html.theme-light / html.theme-dark ---- */
-:root.theme-light{
-  --bg:#f7f7fb; --text:#0b1220; --muted:#495062;
-  --card: rgba(255,255,255,.9);
-  --glass-bd: rgba(0,0,0,.08);
-  --glass-bg: rgba(255,255,255,.8);
-  --glass-bg-dark: rgba(17,24,39,.6);
-  --shadow: 0 8px 24px rgba(2,6,23,.08), inset 0 1px 0 rgba(255,255,255,.9);
-}
-:root.theme-dark{
-  --bg: #0b1020; --text:#e5e7eb; --muted:#9aa1b2;
-  --card: rgba(255,255,255,.08);
-  --glass-bd: rgba(255,255,255,.28);
-  --glass-bg: rgba(2,6,23,.55);
-  --glass-bg-dark: rgba(2,6,23,.55);
-  --shadow: 0 10px 30px rgba(2,6,23,.35), inset 0 1px 0 rgba(255,255,255,.1);
-}
 
-/* Branded gradient text */
+/* ---------------- Branded gradient text ---------------- */
 .brand-gradient{
   background: linear-gradient(90deg, var(--g1), var(--g2), var(--g4));
   -webkit-background-clip: text;
@@ -139,56 +142,49 @@
   color: transparent;
 }
 
-/* Attractive Ask textarea */
-.ask-textarea{
-  --ta-bg: color-mix(in oklab, white 82%, transparent);
-  --ta-bg-dark: color-mix(in oklab, #0b1220 78%, transparent);
-  --ta-text: #0b1020;
-  --ta-text-dark: #e6ecff;
-  --ta-border1: #8b5cf6; /* indigo-500 */
-  --ta-border2: #06b6d4; /* cyan-500 */
-
+/* ---------------- Ask textarea (single, unified definition) ---------------- */
+/* Readable in both themes, subtle aurora glow, **no duplicates** */
+.ask-textarea {
   width: 100%;
-  min-height: 160px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid transparent;
+  min-height: 2.75rem; /* ~2 lines base; JS auto-grows */
+  resize: none; /* autosize handled in JS */
+  padding: 12px 14px;
+  border-radius: 16px;
   background:
-    linear-gradient(var(--ta-bg), var(--ta-bg)) padding-box,
-    linear-gradient(135deg, var(--ta-border1), var(--ta-border2)) border-box;
-  color: var(--ta-text);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.6),
-    0 10px 30px rgba(99,102,241,.08);
+    radial-gradient(120% 100% at 0% 0%, rgba(99,102,241,0.15), transparent 60%),
+    radial-gradient(120% 100% at 100% 100%, rgba(34,197,94,0.12), transparent 60%),
+    var(--card-bg);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.4);
   outline: none;
-  resize: vertical;
-  transition: box-shadow .2s ease, background .2s ease, transform .05s ease;
-}
-
-.dark .ask-textarea{
-  background:
-    linear-gradient(var(--ta-bg-dark), var(--ta-bg-dark)) padding-box,
-    linear-gradient(135deg, var(--ta-border1), var(--ta-border2)) border-box;
-  color: var(--ta-text-dark);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.06),
-    0 10px 30px rgba(6,182,212,.12);
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    0 8px 24px rgba(79,70,229,0.08);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
-
-.ask-textarea::placeholder{
-  color: #64748b; /* slate-500 */
+.ask-textarea::placeholder {
+  color: var(--muted);
 }
-.dark .ask-textarea::placeholder{
-  color: #94a3b8; /* slate-400 */
-}
-
-.ask-textarea:focus-visible{
+.ask-textarea:focus-visible {
   box-shadow:
-    0 0 0 6px color-mix(in oklab, var(--ta-border1) 22%, transparent),
-    0 12px 36px rgba(6,182,212,.20);
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 0 0 3px rgba(99,102,241,0.25),
+    0 8px 24px rgba(99,102,241,0.18);
+  border-color: rgba(99,102,241,0.45);
 }
 
-.ask-textarea:disabled{
-  opacity: .6;
-  cursor: not-allowed;
+/* Slightly stronger borders in dark to ensure AA contrast */
+:root[data-theme="dark"] .ask-textarea {
+  border-color: rgba(255,255,255,0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.1),
+    0 8px 24px rgba(0,0,0,0.35);
+}
+:root[data-theme="dark"] .ask-textarea:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.2),
+    0 0 0 3px rgba(99,102,241,0.35),
+    0 8px 24px rgba(99,102,241,0.28);
+  border-color: rgba(99,102,241,0.55);
 }
