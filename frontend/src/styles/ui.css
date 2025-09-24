@@ -1,15 +1,115 @@
-/* frontend/src/styles/ui.css */
-@layer components {
-  .glass-card { @apply rounded-2xl border border-white/40 bg-white/60 backdrop-blur shadow-lg dark:border-white/10 dark:bg-slate-900/60; }
-  .glass-surface-soft { @apply bg-white/60 backdrop-blur dark:bg-slate-900/60; }
-  .shadow-glass { @apply shadow-lg; }
+/* Aurora/Glass UI kit — Fortune-50 friendly (AA contrast, reduced motion respected) */
 
-  .btn-base { @apply inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2; }
-  .btn-primary { @apply bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white hover:opacity-90 focus-visible:ring-indigo-300 dark:from-indigo-400 dark:to-fuchsia-400; }
-  .btn-secondary { @apply border border-white/40 bg-white/80 text-slate-900 shadow-sm hover:bg-white dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100; }
-  .btn-ghost { @apply border border-white/40 bg-white/60 text-slate-700 hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200; }
+:root{
+  /* base palette */
+  --bg: #0b1020;            /* deep night */
+  --bg-soft: rgba(255,255,255,.06);
+  --text: #e5e7eb;          /* slate-200 */
+  --muted: #9aa1b2;         /* slate-400-ish */
+  --card: rgba(255,255,255,.08);
+  --ring: #8b5cf6;          /* indigo-500 */
 
-  .message-bubble { @apply rounded-2xl px-3 py-2 text-sm; }
-  .message-bubble[data-tone="info"] { @apply bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-100; }
-  .message-bubble[data-tone="error"] { @apply bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-100; }
+  /* brand gradient */
+  --g1:#7c3aed; --g2:#06b6d4; --g3:#22c55e; --g4:#60a5fa;
+
+  /* surfaces */
+  --glass-bd: rgba(255,255,255,.28);
+  --glass-bg: rgba(255,255,255,.65);
+  --glass-bg-dark: rgba(2,6,23,.55);
+
+  /* tokens */
+  --rad: 16px;
+  --shadow: 0 10px 30px rgba(2,6,23,.35), inset 0 1px 0 rgba(255,255,255,.1);
+  --speed: .18s;            /* snappy but not flashy */
 }
+
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f7f7fb; --text:#0b1220; --muted:#495062;
+    --card: rgba(255,255,255,.9);
+    --glass-bd: rgba(0,0,0,.08);
+    --glass-bg: rgba(255,255,255,.8);
+    --glass-bg-dark: rgba(17,24,39,.6);
+    --shadow: 0 8px 24px rgba(2,6,23,.08), inset 0 1px 0 rgba(255,255,255,.9);
+  }
+}
+
+/* Page aurora background (applied to <body class="aurora-bg">) */
+.aurora-bg{
+  min-height: 100dvh;
+  background:
+    radial-gradient(1000px 500px at 10% 5%, rgba(124,58,237,.20), transparent 60%),
+    radial-gradient(900px 400px at 90% 4%, rgba(6,182,212,.18), transparent 55%),
+    radial-gradient(800px 420px at 50% 100%, rgba(96,165,250,.16), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.08), transparent 20%),
+    var(--bg);
+}
+
+/* Glass containers */
+.glass-card{
+  border-radius: calc(var(--rad) + 8px);
+  border: 1px solid var(--glass-bd);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+}
+.glass-surface-soft{
+  border-radius: var(--rad);
+  border: 1px solid var(--glass-bd);
+  background: color-mix(in oklab, var(--glass-bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Buttons */
+.btn-base{
+  --pad: .65rem 1rem;
+  display:inline-flex; align-items:center; gap:.5rem;
+  padding:var(--pad); border-radius:999px; font-weight:600;
+  line-height:1; border:1px solid transparent; user-select:none;
+  transition:transform var(--speed) ease, box-shadow var(--speed) ease, background var(--speed) ease, border-color var(--speed) ease;
+  outline: none;
+}
+.btn-base:focus-visible{ box-shadow:0 0 0 2px #fff, 0 0 0 4px var(--ring); }
+@media (prefers-reduced-motion: reduce){
+  .btn-base{ transition:none; }
+}
+.btn-primary{
+  color:white; background:linear-gradient(135deg, var(--g1), var(--g2));
+  box-shadow:0 10px 24px rgba(124,58,237,.28);
+}
+.btn-primary:hover{ filter:brightness(1.03); transform:translateY(-1px); }
+.btn-secondary{
+  color:white; background:linear-gradient(135deg, var(--g2), var(--g4));
+  box-shadow:0 10px 22px rgba(6,182,212,.24);
+}
+.btn-ghost{
+  background:transparent; color:var(--text);
+  border-color: color-mix(in oklab, var(--ring), #fff 70%);
+}
+.btn-ghost:hover{ background: rgba(255,255,255,.06); }
+
+/* Shadows */
+.shadow-glass{ box-shadow: var(--shadow); }
+
+/* Message bubble (info/error/ok) */
+.message-bubble{
+  --tone-bg: rgba(99,102,241,.12);
+  --tone-bd: rgba(99,102,241,.35);
+  --tone-fg: #3730a3;
+  border-radius: 14px; padding:.75rem 1rem;
+  background: var(--tone-bg); border:1px solid var(--tone-bd);
+  color: var(--tone-fg); font-weight:500;
+}
+.message-bubble[data-tone="error"]{ --tone-bg: rgba(239,68,68,.12); --tone-bd: rgba(239,68,68,.35); --tone-fg:#991b1b; }
+.message-bubble[data-tone="info"]{  --tone-bg: rgba(59,130,246,.12); --tone-bd: rgba(59,130,246,.35); --tone-fg:#1e3a8a; }
+
+/* Token/credit badges used in UsageFeed */
+.badge-token{ background:rgba(99,102,241,.15); color:#4338ca; border-radius:999px; padding:.25rem .5rem; font:600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.badge-credit{ background:rgba(6,182,212,.15); color:#0e7490; border-radius:999px; padding:.25rem .6rem; font:600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Table helpers for glass tables */
+.table-glass{ width:100%; border-collapse:collapse; font-size:14px; color:var(--text);}
+.table-glass thead{ background: rgba(255,255,255,.5); color:#0b1220;}
+.table-glass th, .table-glass td{ padding:.65rem .75rem; border-bottom:1px solid rgba(255,255,255,.28); }

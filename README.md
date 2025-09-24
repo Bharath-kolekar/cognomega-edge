@@ -467,3 +467,10 @@ $tok = $g.token
 - No direct CF changes without a corresponding Git commit. If routes/DNS change, attach a fresh **route audit** proof to `ops/proofs/`.
 
 ---
+
+## Documentation
+
+- **Product & UI/UX**: [docs/README.md](docs/README.md)  
+- **Operations**: [docs/OPS.md](docs/OPS.md)  
+- **CI/CD**: [docs/ci-cd.md](docs/ci-cd.md)
+
