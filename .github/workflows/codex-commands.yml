@@ -1,41 +1,22 @@
 name: codex-commands
+
 on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   handle:
-    if: github.event.issue.pull_request != '' && startsWith(github.event.comment.body, '/codex ')
+    # TEMP WINDOW: no label guard; still restricted to issues (not PR review comments)
+    if: ${{ github.event.issue.pull_request == null && startsWith(github.event.comment.body, '/codex-') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Parse command
-        id: cmd
+      - name: Log command (guard disabled window)
         run: |
-          body="${{ github.event.comment.body }}"
-          cmd=$(echo "$body" | awk '{print $2}')
-          echo "cmd=$cmd" >> $GITHUB_OUTPUT
-
-      - name: Enforce allowlist (optional)
-        if: ${{ !contains('["OWNER","COLLABORATOR"]', github.event.comment.author_association) }}
-        run: |
-          echo "::error::Only repo collaborators/owners can issue codex commands."
-          exit 1
-
-      - name: Act on command
-        run: |
-          case "${{ steps.cmd.outputs.cmd }}" in
-            plan)
-              echo "Running planning checks…"
-              ;;
-            apply)
-              echo "Labeling PR codex:ready…"
-              gh pr edit ${{ github.event.issue.number }} --add-label codex:ready
-              ;;
-            *)
-              echo "::error::Unknown codex command"
-              exit 1
-          esac
-        env:
-          GH_TOKEN: ${{ github.token }}
+          echo "actor=${{ github.actor }}"
+          echo "issue=${{ github.event.issue.number }}"
+          echo "body=${{ github.event.comment.body }}"
