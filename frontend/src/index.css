@@ -1,8 +1,11 @@
 ﻿/* frontend/src/index.css */
 
-/* Tailwind (v4 style import). If you're on Tailwind v3, keep the classic:
+/* Tailwind (v4-style import). If you're on Tailwind v3, keep:
    @tailwind base; @tailwind components; @tailwind utilities; */
 @import "tailwindcss";
+
+/* Bring in our aurora/glass utilities used by the refreshed components */
+@import "./styles/ui.css";
 
 /* Minimal base so it looks nice even before custom styles. Wrap in @layer
    so Tailwind doesn't purge these and to keep proper cascade order. */
@@ -19,6 +22,12 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  /* Optional: nicer default for dark mode when using Tailwind's `dark` class */
+  .dark body {
+    background: #0b1220;         /* deep slate/ink */
+    color: #e5e7eb;              /* slate-200 */
   }
 
   /* Improve focus visibility for keyboard users */
@@ -44,8 +53,8 @@
       "Liberation Mono", "Courier New", monospace;
   }
 
-  /* Opt into a light color scheme explicitly (override if you add dark mode) */
-  :root { color-scheme: light; }
+  /* Advertise both schemes; app can toggle `dark` class for Tailwind dark mode */
+  :root { color-scheme: light dark; }
 }
 
 /* Optional small utility: a nicer container max-width for plain layouts

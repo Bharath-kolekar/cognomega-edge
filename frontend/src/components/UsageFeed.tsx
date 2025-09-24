@@ -82,8 +82,8 @@ function normalizeUsagePayload(data: any): UsageEvent[] {
   if (Array.isArray(data)) return data as UsageEvent[];
 
   if (Array.isArray(data?.usage)) return data.usage as UsageEvent[];
-  if (Array.isArray(data?.items)) return (data.items as UsageEvent[]);
-  if (Array.isArray(data?.data)) return (data.data as UsageEvent[]);
+  if (Array.isArray(data?.items)) return data.items as UsageEvent[];
+  if (Array.isArray(data?.data)) return data.data as UsageEvent[];
   if (Array.isArray(data?.events)) return data.events as UsageEvent[];
 
   // Best-effort mapping if the items are in a slightly different shape
@@ -301,116 +301,107 @@ export default function UsageFeed({
   const rows = items.slice(0, Math.max(1, limit));
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>Recent usage</div>
+    <section className="mt-12 space-y-4" aria-live="polite">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+            Recent usage
+          </span>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Telemetry for the last {Math.max(1, limit)} requests.
+          </p>
+        </div>
+      </div>
 
       {!originOk && (
-        <div style={{ color: "#6b7280", fontSize: 12 }}>
+        <div className="message-bubble" data-tone="info">
           Usage feed is unavailable on preview domains (CORS). Open{" "}
-          <code>https://app.cognomega.com</code> or run locally to view.
+          <code className="ml-2 rounded-full bg-white/60 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-900/60 dark:text-slate-200">
+            https://app.cognomega.com
+          </code>{" "}
+          or run locally to view.
         </div>
       )}
 
-      {originOk && loading && <div>Loading…</div>}
-      {originOk && err && <div style={{ color: "#b91c1c" }}>Error loading usage</div>}
-      {originOk && !loading && !err && rows.length === 0 && <div>No recent usage</div>}
+      {originOk && loading && (
+        <div className="message-bubble" data-tone="info">
+          Loading…
+        </div>
+      )}
+
+      {originOk && err && (
+        <div className="message-bubble" data-tone="error">
+          Error loading usage
+        </div>
+      )}
+
+      {originOk && !loading && !err && rows.length === 0 && (
+        <div className="message-bubble" data-tone="info">
+          No recent usage
+        </div>
+      )}
 
       {originOk && !loading && !err && rows.length > 0 && (
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: 13,
-              lineHeight: 1.35,
-            }}
-          >
-            <thead style={{ background: "#f9fafb", color: "#111827" }}>
-              <tr>
-                <th style={th}>Timestamp</th>
-                <th style={th}>What</th>
-                <th style={thRight}>Tokens</th>
-                <th style={thRight}>Credits</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((x, i) => {
-                const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-                const tIn = Number.isFinite(Number(x.tokens_in)) ? Number(x.tokens_in) : 0;
-                const tOut = Number.isFinite(Number(x.tokens_out)) ? Number(x.tokens_out) : 0;
-                const cr =
-                  typeof x.cost_credits === "number"
-                    ? x.cost_credits.toFixed(3)
-                    : (Number.isFinite(Number(x.cost_credits)) ? Number(x.cost_credits).toFixed(3) : "0.000");
-                return (
-                  <tr key={`${x.created_at}-${i}`} style={{ background: bg }}>
-                    <td style={td}>{fmtWhen(x.created_at)}</td>
-                    <td style={td}>
-                      <div style={{ fontWeight: 500 }}>{whatLabel(x)}</div>
-                    </td>
-                    <td style={tdRight}>
-                      <span style={pill}>{tIn}</span>
-                      <span style={{ margin: "0 4px" }}>+</span>
-                      <span style={pill}>{tOut}</span>
-                    </td>
-                    <td style={tdRight}>
-                      <span style={creditBadge}>{cr}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div
-            style={{
-              padding: "6px 10px",
-              fontSize: 11,
-              color: "#6b7280",
-              borderTop: "1px solid #e5e7eb",
-            }}
-          >
+        <div className="glass-surface-soft overflow-hidden rounded-2xl border border-white/40 bg-white/60 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-white/40 text-left text-sm text-slate-700 dark:divide-white/10 dark:text-slate-200">
+              <thead className="bg-white/70 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Timestamp</th>
+                  <th className="px-4 py-3">What</th>
+                  <th className="px-4 py-3 text-right">Tokens</th>
+                  <th className="px-4 py-3 text-right">Credits</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/30 dark:divide-white/10">
+                {rows.map((x, i) => {
+                  const tIn = Number.isFinite(Number(x.tokens_in)) ? Number(x.tokens_in) : 0;
+                  const tOut = Number.isFinite(Number(x.tokens_out)) ? Number(x.tokens_out) : 0;
+                  const cr =
+                    typeof x.cost_credits === "number"
+                      ? x.cost_credits.toFixed(3)
+                      : Number.isFinite(Number(x.cost_credits))
+                      ? Number(x.cost_credits).toFixed(3)
+                      : "0.000";
+
+                  return (
+                    <tr key={`${x.created_at}-${i}`} className="bg-white/50 text-sm dark:bg-slate-900/50">
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {fmtWhen(x.created_at)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-800 dark:text-slate-100">{whatLabel(x)}</div>
+                        {x.route && (
+                          <div className="text-xs text-slate-500 dark:text-slate-400">{x.route}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-100">
+                            {tIn}
+                          </span>
+                          <span className="text-slate-400">+</span>
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-100">
+                            {tOut}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="inline-flex items-center rounded-full bg-cyan-100 px-3 py-0.5 font-mono text-[11px] font-semibold text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-100">
+                          {cr}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-white/40 bg-white/50 px-4 py-2 text-xs text-slate-500 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-400">
             Auto-refreshing every {Math.round((refreshMs ?? 30000) / 1000)}s
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
-
-/* ---- tiny inline styles to avoid extra CSS ---- */
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 10px",
-  fontWeight: 600,
-  borderBottom: "1px solid #e5e7eb",
-  fontSize: 12,
-};
-const thRight: React.CSSProperties = { ...th, textAlign: "right", whiteSpace: "nowrap" };
-const td: React.CSSProperties = {
-  padding: "8px 10px",
-  borderBottom: "1px solid #f1f5f9",
-  verticalAlign: "top",
-};
-const tdRight: React.CSSProperties = { ...td, textAlign: "right", whiteSpace: "nowrap" };
-
-const pill: React.CSSProperties = {
-  display: "inline-block",
-  padding: "2px 6px",
-  borderRadius: 999,
-  background: "#eef2ff",
-  color: "#3730a3",
-  fontSize: 12,
-  minWidth: 22,
-  textAlign: "center",
-  fontVariantNumeric: "tabular-nums",
-};
-
-const creditBadge: React.CSSProperties = {
-  display: "inline-block",
-  padding: "2px 6px",
-  borderRadius: 6,
-  background: "#ecfeff",
-  color: "#155e75",
-  fontVariantNumeric: "tabular-nums",
-  fontSize: 12,
-};
