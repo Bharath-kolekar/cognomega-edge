@@ -1,14 +1,9 @@
 // frontend/src/App.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  apiUrl,
-  readUserEmail,
-  ensureApiBase,
-} from "./lib/api/apiBase";
+import { apiUrl, readUserEmail, ensureApiBase } from "./lib/api/apiBase";
 
 import ThemeShell from "./components/ThemeShell";
 import TopNav from "./components/TopNav";
-import CreditPill from "./components/CreditPill";
 import LaunchInBuilder from "./components/LaunchInBuilder";
 import UsageFeed from "./components/UsageFeed";
 import VoiceGuide from "./components/VoiceGuide";
@@ -22,7 +17,6 @@ declare global {
   }
 }
 
-// Minimal SpeechRecognition type (keeps TS happy across browsers)
 type SpeechRecognition = {
   lang: string;
   continuous: boolean;
@@ -39,7 +33,7 @@ const TS_SITE =
     (import.meta as any)?.env?.VITE_TURNSTILE_SITE_KEY) ||
   "";
 
-// ---- types for polling UI (kept; used elsewhere) ----
+/* ---- job + ask types ---- */
 type Job = {
   id: string;
   status: "queued" | "working" | "done" | "error" | string;
@@ -78,7 +72,7 @@ const SKILLS: { id: Skill; label: string }[] = [
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 120_000;
 
-// ---- local prompt capture for (optional) usage matching ----
+/* ---- local prompt correlation ---- */
 const LS_KEY = "cm_usage_prompts";
 const MAX_PROMPTS = 200;
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -113,9 +107,7 @@ function writePrompts(arr: { ts: number; text: string }[]) {
     } catch {
       window.dispatchEvent(new Event("storage"));
     }
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 }
 function pushPrompt(text: string) {
   if (!text || !text.trim()) return;
@@ -124,7 +116,7 @@ function pushPrompt(text: string) {
   writePrompts(list);
 }
 
-// ---- tiny helpers for guest token persistence ----
+/* ---- guest token helpers ---- */
 const nowSec = () => Math.floor(Date.now() / 1000);
 function persistGuestToken(token: string, ttlSecOrExp: number) {
   try {
@@ -142,12 +134,9 @@ function persistGuestToken(token: string, ttlSecOrExp: number) {
     } catch {
       window.dispatchEvent(new Event("storage"));
     }
-  } catch {
-    /* no-op */
-  }
+  } catch {}
 }
 
-// Normalize any API response (string or object) to {token, ttl}
 function extractToken(result: any): { token: string; ttl: number } | null {
   try {
     if (!result) return null;
@@ -183,7 +172,7 @@ function getOrCreateClientId(): string {
   }
 }
 
-/* ---------- shared UI tokens ---------- */
+/* ---- shared UI tokens ---- */
 const fieldCls =
   "w-full rounded-2xl border border-white/40 bg-white/70 px-4 py-2.5 text-sm text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus-visible:ring-indigo-400 dark:focus-visible:ring-offset-slate-950 backdrop-blur placeholder:text-slate-500 dark:placeholder:text-slate-400";
 
@@ -191,7 +180,6 @@ const fieldCls =
 export default function App() {
   const [ready, setReady] = useState(false);
 
-  // Ask console
   const [askResp, setAskResp] = useState<string>("");
   const [uploadResp, setUploadResp] = useState<string>("");
 
@@ -208,7 +196,6 @@ export default function App() {
   const [attachLastUpload, setAttachLastUpload] = useState<boolean>(false);
   const [lastUploadKey, setLastUploadKey] = useState<string | null>(null);
 
-  // Poll/download UI state
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -224,26 +211,20 @@ export default function App() {
   const tsExecRef = useRef<Promise<string> | null>(null);
   const authBusyRef = useRef(false);
 
-  // In-memory JWT & timer
   const jwtRef = useRef<string>("");
   const refreshTimer = useRef<any>(null);
 
-  // Polling refs
   const pollAbort = useRef<AbortController | null>(null);
   const pollTimer = useRef<number | null>(null);
   const pollStart = useRef<number>(0);
 
-  // Ask abort (for streaming)
   const askAbortRef = useRef<AbortController | null>(null);
 
-  // Speech-to-text (Web Speech API)
   const sttRef = useRef<SpeechRecognition | null>(null);
   const [listening, setListening] = useState(false);
 
-  // Resolved API base for child components (UsageFeed)
   const [resolvedBase, setResolvedBase] = useState<string>("");
 
-  // Optional: balance for TopNav pill
   const [credits, setCredits] = useState<number | undefined>(undefined);
 
   /* ---------- helpers ---------- */
@@ -353,7 +334,6 @@ export default function App() {
     };
   }, []);
 
-  // --- restore & poll if landing with ?job= in URL ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("job");
@@ -371,7 +351,7 @@ export default function App() {
     }
   }, [jobId, isDone]);
 
-  // ---------- health probe & boot ----------
+  /* ---------- boot / health ---------- */
   useEffect(() => {
     (async () => {
       try {
@@ -414,7 +394,7 @@ export default function App() {
       } catch {}
     })();
 
-    // Turnstile widget
+    // Turnstile
     let iv: any = null;
     let fb: any = null;
 
@@ -468,7 +448,7 @@ export default function App() {
     return tsExecRef.current;
   };
 
-  // ---- Voice Dictation ----
+  /* ---- voice dictation ---- */
   function getRecognizer(): SpeechRecognition | null {
     try {
       if (sttRef.current) return sttRef.current;
@@ -499,7 +479,12 @@ export default function App() {
     const rec = getRecognizer();
     if (!rec) return alert("Voice dictation is not available in this browser.");
     if (listening) { try { rec.stop(); } catch {} setListening(false); return; }
-    try { rec.start(); setListening(true); } catch { setListening(false); }
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -509,7 +494,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [listening]);
 
-  // ---- Guest auth ----
+  /* ---- guest auth ---- */
   async function fetchGuestTokenMulti(): Promise<{ token: string; ttl: number } | null> {
     let ts = "";
     try { ts = await getTurnstileToken(); } catch { ts = ""; }
@@ -570,7 +555,7 @@ export default function App() {
     }
   };
 
-  // ---------- Credits for TopNav ----------
+  /* ---- credits for TopNav ---- */
   const loadBalance = useCallback(async () => {
     try {
       const email = readUserEmail();
@@ -597,7 +582,7 @@ export default function App() {
   }, []);
   useEffect(() => { if (authReady) void loadBalance(); }, [authReady, loadBalance]);
 
-  // ---------- Ask (advanced) ----------
+  /* ---- ask ---- */
   const ask = async () => {
     if (askAbortRef.current) { askAbortRef.current.abort(); askAbortRef.current = null; }
     const ac = new AbortController();
@@ -722,7 +707,7 @@ export default function App() {
     }
   };
 
-  // ---------- Direct upload via /api/upload/direct ----------
+  /* ---- direct upload via /api/upload/direct ---- */
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) return alert("Choose a file first.");
@@ -778,13 +763,13 @@ export default function App() {
     }
   };
 
-  /* ---------- derived view state ---------- */
+  /* ---- derived ---- */
   const healthObj = useMemo(() => {
     try { return JSON.parse(health || "{}"); } catch { return null; }
   }, [health]);
   const apiOk = !!(healthObj && typeof healthObj === "object" && healthObj.ok);
 
-  /* ---------- UI ---------- */
+  /* ---- UI ---- */
   return (
     <ThemeShell
       header={
@@ -798,21 +783,24 @@ export default function App() {
       }
       maxWidth="7xl"
     >
-      {/* Status pills (left of hero) */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="rounded-full border border-white/40 bg-white/60 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200">
-          API readiness: {health}
+      {/* Debug (collapsible) to avoid duplicate status pills in the main header */}
+      <details className="mb-3 text-xs text-slate-600 dark:text-slate-300">
+        <summary className="cursor-pointer">Debug</summary>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-md bg-white/70 p-2 shadow-sm backdrop-blur dark:bg-slate-900/60">
+            <div className="font-semibold">API readiness</div>
+            <pre className="whitespace-pre-wrap break-words">{health}</pre>
+          </div>
+          <div className="rounded-md bg-white/70 p-2 shadow-sm backdrop-blur dark:bg-slate-900/60">
+            <div className="font-semibold">Auth</div>
+            <div>{authMsg}</div>
+          </div>
+          <div className="rounded-md bg-white/70 p-2 shadow-sm backdrop-blur dark:bg-slate-900/60">
+            <div className="font-semibold">API base</div>
+            <div>{(resolvedBase && String(resolvedBase)) || "(not resolved yet)"}</div>
+          </div>
         </div>
-        <div className="rounded-full border border-white/40 bg-white/60 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200">
-          Auth: {authMsg}
-        </div>
-        <div className="hidden rounded-full border border-white/40 bg-white/60 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 sm:block">
-          App is calling: {(resolvedBase && String(resolvedBase)) || "(base not resolved yet)"}
-        </div>
-        <div className="ml-auto">
-          <CreditPill />
-        </div>
-      </div>
+      </details>
 
       {/* Ask console */}
       <section className="glass-card space-y-3 px-5 py-5">
@@ -828,17 +816,19 @@ export default function App() {
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[1fr_260px]">
-          {/* left pane */}
-          <div className="flex flex-col gap-3">
+          {/* left pane: wrap in a form so click + Enter submit reliably */}
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => { e.preventDefault(); void ask(); }}
+          >
             <textarea
               className="ask-textarea"
-              data-voice-hint="Type your prompt. Press Ctrl or Cmd + Enter to submit. You can also choose an Intelligence Tier in the builder or use the Ask box here."
+              data-voice-hint="Type your prompt. Press Ctrl or Cmd + Enter to submit."
               rows={8}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Ask anything…  (Ctrl/Cmd + Enter to send)"
               onKeyDown={(e) => {
-                // Allow plain Enter for newlines; submit on Ctrl/Cmd+Enter.
                 // @ts-expect-error: nativeEvent may have isComposing
                 if (e.isComposing || e.nativeEvent?.isComposing) return;
                 const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
@@ -848,7 +838,6 @@ export default function App() {
                 }
               }}
             />
-
 
             <details>
               <summary className="cursor-pointer text-sm text-slate-600 dark:text-slate-300">
@@ -878,10 +867,11 @@ export default function App() {
             </details>
 
             <div className="flex flex-wrap gap-2">
-              <button className="btn-base btn-primary" data-role="ask-button" onClick={ask}>
+              <button type="submit" className="btn-base btn-primary" data-role="ask-button">
                 Ask
               </button>
               <button
+                type="button"
                 className="btn-base btn-secondary"
                 data-role="mic"
                 onClick={toggleDictation}
@@ -890,6 +880,7 @@ export default function App() {
                 {listening ? "Stop Mic" : "Voice"}
               </button>
               <button
+                type="button"
                 className="btn-base btn-ghost"
                 title="Abort current request"
                 onClick={() => askAbortRef.current?.abort()}
@@ -897,6 +888,7 @@ export default function App() {
                 Abort
               </button>
               <button
+                type="button"
                 className="btn-base btn-ghost"
                 onClick={() => {
                   const blob = new Blob([askResp || ""], { type: "text/markdown;charset=utf-8" });
@@ -913,6 +905,7 @@ export default function App() {
                 Export .md
               </button>
               <button
+                type="button"
                 className="btn-base btn-ghost"
                 onClick={() => navigator.clipboard.writeText(askResp || "").catch(() => {})}
                 title="Copy answer"
@@ -920,7 +913,7 @@ export default function App() {
                 Copy
               </button>
             </div>
-          </div>
+          </form>
 
           {/* right pane */}
           <div className="flex flex-col gap-3">
@@ -982,7 +975,7 @@ export default function App() {
 
       {/* Ask output console */}
       <section className="mt-4">
-        <pre className="glass-surface-soft rounded-2xl border border-white/40 bg-white/60 p-4 text-sm text-slate-800 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 whitespace-pre-wrap">
+        <pre className="glass-surface-soft whitespace-pre-wrap rounded-2xl border border-white/40 bg-white/60 p-4 text-sm text-slate-800 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100">
           {askResp}
         </pre>
       </section>
