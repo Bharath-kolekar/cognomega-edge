@@ -1,0 +1,63 @@
+name: deploy
+
+on:
+  push:
+    branches: [ main ]
+    # Only fire when API files change
+    paths:
+      - 'api/**'
+
+jobs:
+  deploy:
+    name: Deploy API (CF Workers)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-api
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Double-guard: even if GitHub misfires, skip when no api/** changes
+      - name: Detect api changes
+        id: ch
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'api/**'
+
+      - name: Skip (no api/** changes)
+        if: steps.ch.outputs.api != 'true'
+        run: |
+          echo "No api/** changes; skipping deploy."
+          exit 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm i -g wrangler@3
+
+      - name: Install API deps
+        working-directory: api
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm i --no-frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i
+          fi
+
+      - name: Deploy (wrangler)
+        working-directory: api
+        env:
+          # Use the secrets you actually have configured
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          wrangler deploy
