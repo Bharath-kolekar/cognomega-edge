@@ -1,93 +1,25 @@
-﻿import { defineConfig, splitVendorChunkPlugin } from "vite";
-import react from "@vitejs/plugin-react";
-import { fileURLToPath, URL } from "node:url";
-
-// --- Dev proxy target (unchanged) ---
-const target = "https://api.cognomega.com";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [
-    react(),
-    // Helps split common vendor chunks automatically
-    splitVendorChunkPlugin(),
-  ],
-
-  // Resolve aliases (so "@/..." maps to "./src/...")
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
-  },
-
-  // ---- Development server: keep your existing proxies intact ----
+  plugins: [react()],
   server: {
-    port: 5173,
+    port: 5174,
     strictPort: true,
     proxy: {
-      // ---- specific health/ready rewrites ----
-      "/ready":       { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/v1/healthz" },
-      "/api/ready":   { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/v1/healthz" },
-      "/health":      { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/v1/healthz" },
-      "/healthz":     { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/v1/healthz" },
-      "/api/health":  { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/v1/healthz" },
-      "/api/healthz": { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/v1/healthz" },
-
-      // ---- specific USAGE rewrites (canonical → /api/billing/usage) ----
-      "/usage":                 { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/billing/usage" },
-      "/api/usage":             { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/billing/usage" },
-      "/api/v1/usage":          { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/billing/usage" },
-      "/billing/usage":         { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/billing/usage" },
-      "/api/v1/billing/usage":  { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/billing/usage" },
-
-      // ---- specific CREDITS rewrites (canonical → /api/credits) ----
-      "/credits":               { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-      "/v1/credits":            { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-      "/api/credits":           { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-      "/api/v1/credits":        { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-      "/billing/credits":       { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-      "/api/billing/credits":   { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-      "/api/v1/billing/credits":{ target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost", rewrite: () => "/api/credits" },
-
-      // ---- general API proxies (fallback) ----
-      "/api":     { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
-      "/v1":      { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
-      "/auth":    { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" },
-      "/billing": { target, changeOrigin: true, secure: true, cookieDomainRewrite: "localhost" }
-    }
-  },
-
-  // ---- Production build: split heavy libs into separate chunks ----
-  build: {
-    target: "es2020",
-    sourcemap: false,
-    chunkSizeWarningLimit: 3000,
-    rollupOptions: {
-      output: {
-        // Stricter, explicit chunking + robust fallbacks
-        manualChunks(id) {
-          // Keep @mlc-ai/web-llm totally isolated (large payload)
-          if (id.includes("@mlc-ai/web-llm")) return "mlc-llm";
-
-          // Cross-platform react/react-dom matcher (posix + win paths)
-          if (
-            id.includes("/react/") ||
-            id.includes("\\react\\") ||
-            /react(?:-dom)?[\\/]/.test(id)
-          ) {
-            return "react";
-          }
-
-          // Everything else in node_modules → vendor
-          if (id.includes("node_modules")) return "vendor";
-
-          // otherwise, let Vite/Rollup decide (app code)
-        },
+      '/api': {
+        target: 'https://api.cognomega.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/api(\/api)?/, '/api'),
       },
-    },
-  },
-
-  // Avoid prebundling web-llm during dev (keeps dev fast and ensures true code-split)
-  optimizeDeps: {
-    exclude: ["@mlc-ai/web-llm"],
+      // Optional convenience passthroughs (kept from earlier)
+      '/auth':   { target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
+      '/health': { target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
+      '/healthz':{ target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
+      '/ready':  { target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
+      '/usage':  { target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
+      '/billing':{ target: 'https://api.cognomega.com', changeOrigin: true, secure: true }
+    }
   },
 });
