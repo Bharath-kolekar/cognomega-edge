@@ -1,8 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   server: {
     port: 5174,
     strictPort: true,
@@ -11,9 +17,8 @@ export default defineConfig({
         target: 'https://api.cognomega.com',
         changeOrigin: true,
         secure: true,
-        rewrite: (path) => path.replace(/^\/api(\/api)?/, '/api'),
+        rewrite: (p) => p.replace(/^\/(?:api\/)+/i, '/api/'),
       },
-      // Optional convenience passthroughs (kept from earlier)
       '/auth':   { target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
       '/health': { target: 'https://api.cognomega.com', changeOrigin: true, secure: true },
       '/healthz':{ target: 'https://api.cognomega.com', changeOrigin: true, secure: true },

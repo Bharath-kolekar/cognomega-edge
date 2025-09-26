@@ -1,308 +1,129 @@
-// frontend/src/lib/api/apiBase.ts
-/** apiBase.ts — Cross-origin canonical (production-grade)
- * - Absolute API base (priority: localStorage override > window.__COG__.API_BASE > VITE_API_BASE > process.env > https://api.cognomega.com)
- * - Deterministic endpoints (no probing, no dev-relative fallbacks)
- * - Credential-less fetch by default (simpler CORS); callers may override
- * - Back-compat globals: window.__apiBase, window.__cogApiBase, window.__apiEndpoints
+/** Frontend API base + helpers.
+ * Dev (localhost): use relative "/api" so Vite proxy handles CORS.
+ * Prod: use VITE_API_BASE if set, else https://api.cognomega.com.
  */
 
-let _base: string | null = null;
-let _eps: ApiEndpoints | null = null;
+export function ensureApiBase(): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE?.toString().trim();
+  if (envBase) return envBase;
 
-/* ---------------------------------- Types ---------------------------------- */
+  const isBrowser = typeof window !== "undefined";
+  const origin = isBrowser ? window.location.origin : "";
+  const isLocal =
+    /^http:\/\/localhost(:\d+)?$/i.test(origin) ||
+    /^http:\/\/127\.0\.0\.1(:\d+)?$/i.test(origin);
 
-export type ApiEndpoints = {
-  ready: string;       // /ready (matches Worker)
-  healthz: string;     // /healthz
-  guestAuth: string;   // /auth/guest
-  credits: string;     // /api/billing/balance
-  usage: string;       // /api/billing/usage
-};
-
-export type FetchJsonResult<T = any> = {
-  ok: boolean;
-  status: number;
-  data: T | string | null;
-  headers: Headers;
-};
-
-/* ------------------------------- Base Resolve ------------------------------ */
-
-function readRuntimeOverride(): string {
-  try {
-    const g = globalThis as any;
-    const val =
-      g?.__COG__?.API_BASE
-        ? String(g.__COG__.API_BASE).trim()
-        : g?.__COG__?.api_base
-        ? String(g.__COG__.api_base).trim()
-        : "";
-    return val;
-  } catch {
-    return "";
-  }
+  return isLocal ? "/api" : "https://api.cognomega.com";
 }
 
-function readEnvBase(): string {
-  // Prefer Vite env (baked at build time)
-  try {
-    const viteVal =
-      (typeof import.meta !== "undefined" && (import.meta as any)?.env?.VITE_API_BASE)
-        ? String((import.meta as any).env.VITE_API_BASE).trim()
-        : "";
-    if (viteVal) return viteVal;
-  } catch {}
-
-  // Node-style read (SSR/build tools) without hard-referencing process in types
-  try {
-    const g: any = typeof globalThis !== "undefined" ? (globalThis as any) : {};
-    const nodeVal = g?.process?.env?.VITE_API_BASE
-      ? String(g.process.env.VITE_API_BASE).trim()
-      : "";
-    if (nodeVal) return nodeVal;
-  } catch {}
-
-  return "";
+function joinUrl(base: string, path: string): string {
+  const b = base.replace(/\/+$/, "");
+  const p = path.replace(/^\/+/, "");
+  return `${b}/${p}`;
 }
 
-function normalizeBase(u: string): string {
-  return (u || "").replace(/\/+$/, "");
+export function apiUrl(path: string): string {
+  return joinUrl(ensureApiBase(), path);
 }
 
-function resolveBase(): string {
-  if (_base) return _base;
-
-  // 1) Manual override for QA (highest precedence)
+/** Read best-available auth token from localStorage (guest or real). */
+export function readAuthToken(): string | null {
   try {
-    const manual = localStorage.getItem("api_base_override");
-    if (manual && manual.trim()) {
-      _base = normalizeBase(manual.trim());
-      (globalThis as any).__cogApiBase = _base;
-      (globalThis as any).__apiBase = _base; // compatibility alias
-      return _base;
+    const keys = ["cog_auth_jwt", "jwt", "guest_token"];
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v && v.trim()) return v;
     }
   } catch {}
-
-  // 2) Runtime override provided by hosting layer (_worker/pages) or index.html
-  const runtime = readRuntimeOverride();
-  if (runtime) {
-    _base = normalizeBase(runtime);
-    (globalThis as any).__cogApiBase = _base;
-    (globalThis as any).__apiBase = _base;
-    return _base;
-  }
-
-  // 3) Build-time envs
-  const forced = readEnvBase() || "https://api.cognomega.com";
-  _base = normalizeBase(forced);
-  (globalThis as any).__cogApiBase = _base;
-  (globalThis as any).__apiBase = _base; // compatibility alias
-  return _base;
+  return null;
 }
 
-/** Keep async signature for callers; resolves synchronously and returns base */
-export async function ensureApiBase(): Promise<string> {
-  return resolveBase();
+/** Optional: read a stored user email if present. */
+export function readUserEmail(): string | null {
+  try {
+    const keys = ["cog_user_email", "user_email", "email"];
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v && v.trim()) return v;
+    }
+  } catch {}
+  return null;
 }
 
-/** Get the absolute API URL for a path or passthrough if already absolute */
-export function apiUrl(path = ""): string {
-  const base = resolveBase();
-  if (!path) return base || "/";
-  if (/^https?:\/\//i.test(path)) return path;
-  const right = path.replace(/^\/+/, "");
-  return `${base}/${right}`;
+/** Build common JSON headers with optional bearer token. */
+export function authHeaders(token?: string): Record<string, string> {
+  const h: Record<string, string> = { Accept: "application/json" };
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
 }
 
-/* --------------------------- Endpoint definitions -------------------------- */
+export type FetchMode = "json" | "text" | "blob" | "response";
+export type FetchOpts = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: any;                // object will be JSON-encoded; FormData passes through
+  authToken?: string;        // explicit token if not in localStorage
+  token?: string;            // alias for authToken
+  parse?: FetchMode;         // default "json"
+  signal?: AbortSignal;
+  credentials?: RequestCredentials; // defaults to "same-origin"
+};
 
-export async function ensureApiEndpoints(): Promise<ApiEndpoints> {
-  if (_eps) return _eps;
-  await ensureApiBase();
+/** fetchJson: path-or-URL + opts → parsed result (default JSON). Throws on non-2xx. */
+export async function fetchJson<T = any>(
+  pathOrUrl: string,
+  opts: FetchOpts = {}
+): Promise<T> {
+  const raw = String(pathOrUrl || "");
+  const isAbs   = /^https?:\/\//i.test(raw);
+  const isRoot  = raw.startsWith("/"); // root-relative (already based)
+  const url     = isAbs ? raw : isRoot ? raw : apiUrl(raw);
+  const method = (opts.method || (opts.body ? "POST" : "GET")).toUpperCase();
 
-  const endpoints: ApiEndpoints = {
-    ready:     apiUrl("/ready"),
-    healthz:   apiUrl("/healthz"),
-    guestAuth: apiUrl("/auth/guest"),
-    credits:   apiUrl("/api/billing/balance"),
-    usage:     apiUrl("/api/billing/usage"),
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...(opts.body &&
+      typeof opts.body === "object" &&
+      !(opts.body instanceof FormData)
+      ? { "Content-Type": "application/json" }
+      : {}),
+    ...(opts.headers || {}),
   };
 
-  _eps = endpoints;
-  (globalThis as any).__cogApiEndpoints = endpoints;
-  (globalThis as any).__apiEndpoints = endpoints; // compatibility alias
-  return endpoints;
-}
+  const token = opts.authToken || opts.token || readAuthToken() || "";
+  if (token) headers.Authorization = `Bearer ${token}`;
 
-/** Read-only accessor if endpoints were already computed */
-export function currentApiEndpoints(): ApiEndpoints | null {
-  return _eps;
-}
+  const body =
+    opts.body &&
+    typeof opts.body === "object" &&
+    !(opts.body instanceof FormData)
+      ? JSON.stringify(opts.body)
+      : opts.body;
 
-/* ------------------------------ Base Overrides ----------------------------- */
-
-/** Set a manual API base override (persists to localStorage) */
-export function setApiBaseOverride(base: string): void {
-  const v = normalizeBase(String(base || ""));
-  try { localStorage.setItem("api_base_override", v); } catch {}
-  _base = v || _base; // update in-memory if non-empty
-  if (v) {
-    (globalThis as any).__cogApiBase = v;
-    (globalThis as any).__apiBase = v;
-  }
-}
-
-/** Remove manual API base override */
-export function clearApiBaseOverride(): void {
-  try { localStorage.removeItem("api_base_override"); } catch {}
-  _base = null;
-  resolveBase(); // recompute from env/runtime
-}
-
-/** Whether a manual override exists */
-export function hasApiBaseOverride(): boolean {
-  try {
-    const v = localStorage.getItem("api_base_override");
-    return !!(v && v.trim());
-  } catch { return false; }
-}
-
-/* ----------------------------- Fetch convenience --------------------------- */
-
-export async function fetchJson<T = any>(
-  path: string,
-  init: RequestInit = {}
-): Promise<FetchJsonResult<T>> {
-  const url = apiUrl(path);
-  const mergedHeaders = new Headers(authHeaders(init.headers || {}));
-  // Belt-and-suspenders: strip X-Requested-With in any casing
-  mergedHeaders.delete("X-Requested-With");
-  mergedHeaders.delete("x-requested-with");
-
-  const r = await fetch(url, {
-    credentials: init.credentials ?? "omit",
-    mode: init.mode ?? "cors",
-    ...init,
-    headers: mergedHeaders,
+  const res = await fetch(url, {
+    method,
+    headers,
+    body,
+    signal: opts.signal,
+    credentials: opts.credentials ?? "same-origin",
   });
 
-  const ct = (r.headers.get("content-type") || "").toLowerCase();
-  const isJson = ct.includes("application/json");
-  const data = isJson ? await safeJson(r) : await r.text().then((t) => (t || null));
+  // 204 No Content → null
+  if (res.status === 204) return null as unknown as T;
 
-  return { ok: r.ok, status: r.status, data: data as any, headers: r.headers };
-}
-
-async function safeJson(r: Response) {
-  try { return await r.json(); } catch { return null; }
-}
-
-/* ------------------------------ Legacy exports ----------------------------- */
-
-export function apiBase(path: string = ""): string { return apiUrl(path); }
-export function currentApiBase(): string { return _base ?? ""; }
-
-/* --------------------------------- Auth utils ------------------------------- */
-
-export function readPackedToken(): { token: string; exp?: number } | null {
-  try {
-    const raw = localStorage.getItem("cog_auth_jwt");
-    if (raw) {
-      const j = JSON.parse(raw);
-      if (j && typeof j.token === "string") return j;
-    }
-  } catch {}
-  const legacy = getFirstNonEmpty([
-    () => localStorage.getItem("jwt"),
-    () => localStorage.getItem("guest_token"),
-  ]);
-  if (legacy) return { token: legacy };
-  return null;
-}
-
-function b64uToUtf8(s: string): string {
-  s = s.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
-  if (pad) s = s + "=".repeat(pad);
-  try { return atob(s); } catch { return ""; }
-}
-
-function decodeJwtPayload(tok: string): Record<string, any> | null {
-  const parts = tok.split(".");
-  if (parts.length < 2) return null;
-  try {
-    const payloadJson = b64uToUtf8(parts[1]);
-    return JSON.parse(payloadJson);
-  } catch { return null; }
-}
-
-/** Resolve best-guess user email.
- * Priority:
- * 1) Explicit localStorage keys: user_email, cog_user_email, email
- * 2) JWT payload fields: email, em, sub (if looks like an email)
- */
-export function readUserEmail(): string | null {
-  const direct = getFirstNonEmpty([
-    () => localStorage.getItem("user_email"),
-    () => localStorage.getItem("cog_user_email"),
-    () => localStorage.getItem("email"),
-  ]);
-  if (direct) return direct;
-
-  const packed = readPackedToken();
-  const tok = packed?.token;
-  if (!tok) return null;
-
-  const p = decodeJwtPayload(tok);
-  const candidate = (p?.email ?? p?.em ?? p?.sub ?? null) as string | null;
-  if (candidate && typeof candidate === "string") {
-    if (candidate.includes("@")) return candidate;
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const err: any = new Error(`HTTP ${res.status} ${res.statusText} — ${text.slice(0, 300)}`);
+    err.status = res.status;
+    err.url = url;
+    err.body = text;
+    throw err;
   }
-  return null;
-}
 
-/** Merge provided headers with auth defaults (Accept + Authorization)
- * Returns a POJO (not a Headers object) for wide compatibility.
- * NOTE: We intentionally DO NOT set X-Requested-With (it breaks CORS preflight).
- */
-export function authHeaders(init: HeadersInit = {}): HeadersInit {
-  const h = new Headers(init as any);
-
-  // Never send X-Requested-With (strip any casing if present)
-  h.delete("X-Requested-With");
-  h.delete("x-requested-with");
-
-  if (!h.has("Accept")) h.set("Accept", "application/json");
-
-  try {
-    const packed =
-      (typeof (globalThis as any).readPackedToken === "function")
-        ? (globalThis as any).readPackedToken()
-        : readPackedToken();
-
-    let token: string | undefined =
-      (packed && typeof packed.token === "string")
-        ? packed.token
-        : getFirstNonEmpty([
-            () => localStorage.getItem("jwt"),
-            () => localStorage.getItem("guest_token"),
-          ]) || undefined;
-
-    token = (token || "").trim();
-    if (token && !h.has("Authorization")) h.set("Authorization", `Bearer ${token}`);
-  } catch {}
-
-  return Object.fromEntries(h.entries());
-}
-
-/* --------------------------------- Helpers --------------------------------- */
-
-function getFirstNonEmpty(getters: Array<() => string | null | undefined>): string | null {
-  for (const g of getters) {
-    try {
-      const v = g();
-      if (v && typeof v === "string" && v.trim()) return v.trim();
-    } catch {}
+  switch (opts.parse ?? "json") {
+    case "text":     return (await res.text()) as unknown as T;
+    case "blob":     return (await res.blob()) as unknown as T;
+    case "response": return res as unknown as T;
+    default:         return (await res.json()) as T;
   }
-  return null;
 }
