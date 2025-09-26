@@ -5,6 +5,16 @@ export type EnhancedNLPAnalysis = {
   sentiment?: 'positive' | 'neutral' | 'negative';
   keyphrases?: string[];
 };
-export function nlpProcessor(text: string): EnhancedNLPAnalysis {
-  return { intent: 'unknown', entities: {} };
-}
+
+export type NLPProcessor = {
+  (text: string): EnhancedNLPAnalysis;
+  analyzeTextEnhanced: (text: string) => EnhancedNLPAnalysis;
+};
+
+// Callable + method (both return a safe minimal structure)
+export const nlpProcessor: NLPProcessor = Object.assign(
+  (text: string): EnhancedNLPAnalysis => ({ intent: 'unknown', entities: {} }),
+  {
+    analyzeTextEnhanced: (text: string): EnhancedNLPAnalysis => ({ intent: 'unknown', entities: {} }),
+  }
+);
