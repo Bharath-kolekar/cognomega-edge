@@ -424,8 +424,8 @@ export class ContextualMemory {
   } {
     const relevantMemories = this.getRelevantMemories(currentInput, 10)
     const patterns = []
-    const recommendations = []
-    const warnings = []
+    const recommendations: any[] = []
+    const warnings: any[] = []
 
     const typeFrequency = new Map<string, number>()
     relevantMemories.forEach((memory) => {
@@ -618,7 +618,7 @@ export class ContextualMemory {
   }
 
   private extractSemanticConcepts(text: string): string[] {
-    const concepts = []
+    const concepts: any[] = []
     const lowerText = text.toLowerCase()
 
     const techConcepts = [
