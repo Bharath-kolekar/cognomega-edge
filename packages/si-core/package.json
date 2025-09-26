@@ -1,0 +1,17 @@
+{
+  "name": "@cognomega/si-core",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "powershell -NoProfile -Command Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "license": "MIT"
+}
