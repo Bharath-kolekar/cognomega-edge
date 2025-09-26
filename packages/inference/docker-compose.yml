@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 20
+
+  inference:
+    build: .
+    container_name: inference
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - LLM_MODEL=gemma:7b
+      - WHISPER_SIZE=small
+      - TTS_VOICE=tts_models/en/ljspeech/tacotron2-DDC
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - inference_cache:/app/.cache
+
+volumes:
+  ollama_models:
+  inference_cache:
