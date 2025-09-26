@@ -9,6 +9,11 @@
     "build": "pnpm -r build",
     "dev:frontend": "pnpm -C packages/frontend dev",
     "dev:builder": "pnpm -C packages/builder dev",
-    "dev:api": "pnpm -C packages/api dev"
+    "dev:api": "pnpm -C packages/api dev",
+    "install:ci": "pnpm install --frozen-lockfile",
+    "lint": "pnpm -r lint --if-present",
+    "typecheck": "pnpm -r typecheck --if-present",
+    "test": "pnpm -r test --if-present",
+    "verify": "pnpm -s -r lint --if-present && pnpm -s -r typecheck --if-present && pnpm -s -r build --if-present && pnpm -s -r test --if-present"
   }
 }
