@@ -18,22 +18,16 @@ const KEY_GUEST = "guest_token"; // simple mirror most callers read
 const EXP_SKEW_SEC = 60;
 const nowSec = () => Math.floor(Date.now() / 1000);
 
-// If your app (e.g., App.tsx) exposes a function to fetch a Turnstile token,
-// we’ll call it. This avoids duplicating widget logic here.
+// Keep global declarations consistent across the app.
+// We intentionally use `any` for `window.turnstile` to match App.tsx
+// and avoid duplicate/conflicting type augmentations.
 declare global {
   interface Window {
-    __cogGetTurnstileToken?: () => Promise<string>;
-    // Optional: if your app stores a widget id after rendering Turnstile
+    __cogGetTurnstileToken?: (opts?: { sitekey?: string }) => Promise<string>;
     __cogTurnstileWidgetId?: string;
-    turnstile?: {
-      render: (el: string | HTMLElement, opts: any) => string;
-      getResponse: (widgetId?: string) => string;
-      execute?: (widgetId?: string, opts?: any) => void;
-      reset?: (widgetId?: string) => void;
-    };
+    turnstile?: any; // keep unified with App.tsx & turnstile.ts
   }
 }
-
 function broadcastStorage(key: string, newValue: string) {
   try {
     const ev = new StorageEvent("storage", { key, newValue });
@@ -197,3 +191,5 @@ export async function ensureGuestWithRetry(maxMs = 8000): Promise<string | null>
   }
   return ensureGuest(true);
 }
+
+export {}; // make this file a module

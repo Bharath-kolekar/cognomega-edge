@@ -14,6 +14,6 @@
     "lint": "pnpm -r lint --if-present",
     "typecheck": "pnpm -r typecheck --if-present",
     "test": "pnpm -r test --if-present",
-    "verify": "pnpm -s -r lint --if-present && pnpm -s -r typecheck --if-present && pnpm -s -r build --if-present && pnpm -s -r test --if-present"
+    "verify": "pnpm -s -r run --if-present lint && pnpm -s -r run --if-present typecheck && pnpm -s -r run --if-present build && pnpm -s -r run --if-present test"
   }
 }

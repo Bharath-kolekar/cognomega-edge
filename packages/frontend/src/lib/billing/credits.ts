@@ -1,4 +1,4 @@
-import { apiUrl, ensureApiBase, ensureApiEndpoints, fetchJson } from "../api/apiBase";
+import { apiUrl, ensureApiEndpoints, fetchJson } from "../api/apiBase";
 
 export type CreditsInfo = {
   balance?: number;
@@ -21,25 +21,27 @@ function pickBalance(d: any): number | undefined {
 }
 
 export async function fetchCredits(): Promise<CreditsInfo> {
-  await ensureApiBase();
-  const ep = await ensureApiEndpoints();
+  const ep = ensureApiEndpoints();
 
-  // Try discovered endpoint first; then known fallbacks (deduped)
-  const candidatePaths = [ep.credits, "/api/v1/credits", "/api/credits", "/credits"]
-    .filter(Boolean) as string[];
-
-  const candidates = Array.from(new Set(candidatePaths)).map((p) =>
-    // If ensureApiEndpoints already gave a full URL, use it as-is
-    /^https?:\/\//i.test(p) ? p : apiUrl(p)
-  );
+  // Canonical first; then common fallbacks. De-dup for safety.
+  const candidatePaths = Array.from(
+    new Set([
+      ep.balance,                    // canonical
+      "/api/v1/billing/balance",     // v1 fallback
+      "/api/billing/balance",        // legacy
+      "/balance",
+      "/credits",
+    ])
+  ).map((p) => (/^https?:\/\//i.test(p) ? p : apiUrl(p)));
 
   let saw404 = false;
 
-  for (const url of candidates) {
-    const r = await fetchJson<any>(url, { method: "GET" });
+  for (const url of candidatePaths) {
+    try {
+      // fetchJson returns parsed JSON or throws with .status on non-2xx
+      const payload = await fetchJson<any>(url, { method: "GET" });
+      const d = payload?.data ?? payload ?? {};
 
-    if (r.ok) {
-      const d = r.data ?? {};
       return {
         balance: pickBalance(d),
         used:
@@ -49,21 +51,18 @@ export async function fetchCredits(): Promise<CreditsInfo> {
         plan: d?.plan ?? d?.tier ?? undefined,
         raw: d,
       };
+    } catch (e: any) {
+      const status = Number(e?.status || 0);
+      if (status === 401 || status === 403) {
+        return { requiresAuth: true };
+      }
+      if (status === 404) {
+        saw404 = true;
+        continue; // try next candidate
+      }
+      // Any other failure: return the server body (if any) for diagnostics
+      return { raw: e?.body ?? null };
     }
-
-    // Authorization issue ? tell caller to sign in
-    if (r.status === 401 || r.status === 403) {
-      return { requiresAuth: true };
-    }
-
-    // Keep trying next candidate if this one simply isn’t there
-    if (r.status === 404) {
-      saw404 = true;
-      continue;
-    }
-
-    // Any other failure: return the raw data but don’t explode the UI
-    return { raw: r.data };
   }
 
   // No working endpoint found
@@ -78,17 +77,17 @@ export async function fetchCreditBalance(): Promise<number | null> {
 
 // Keep label logic identical, just benefits from the broader parsing above
 export function formatCreditsLabel(input: CreditsInfo | number | null | undefined): string {
-  if (input == null) return "—";
+  if (input == null) return "â€”";
   if (typeof input === "number") return String(input);
 
   const info = input as CreditsInfo;
   if (info.requiresAuth) return "Sign in";
-  if (info.unsupported) return "—";
+  if (info.unsupported) return "â€”";
 
   if (typeof info.balance === "number") {
     const v = info.balance;
     if (info.currency && typeof info.currency === "string") return `${v} ${info.currency}`;
     return `${v}`;
   }
-  return "—";
+  return "â€”";
 }

@@ -1,4 +1,4 @@
-/** Frontend API base + helpers.
+/** Frontend API base + helpers (dev uses Vite proxy).
  * Dev (localhost): use relative "/api" so Vite proxy handles CORS.
  * Prod: use VITE_API_BASE if set, else https://api.cognomega.com.
  */
@@ -50,21 +50,27 @@ export function readUserEmail(): string | null {
   return null;
 }
 
-/** Build common JSON headers with optional bearer token. */
-export function authHeaders(token?: string): Record<string, string> {
-  const h: Record<string, string> = { Accept: "application/json" };
-  if (token) h.Authorization = `Bearer ${token}`;
+/** Build Headers, optionally seeding with init and injecting bearer token. */
+export type AuthHeaderOpts = { token?: string };
+export function authHeaders(
+  init: HeadersInit = {},
+  opts: AuthHeaderOpts = {}
+): Headers {
+  const h = new Headers(init as any);
+  if (!h.has("Accept")) h.set("Accept", "application/json");
+  const token = opts.token ?? readAuthToken() ?? "";
+  if (token && !h.has("Authorization")) h.set("Authorization", `Bearer ${token}`);
   return h;
 }
 
 export type FetchMode = "json" | "text" | "blob" | "response";
 export type FetchOpts = {
   method?: string;
-  headers?: Record<string, string>;
-  body?: any;                // object will be JSON-encoded; FormData passes through
-  authToken?: string;        // explicit token if not in localStorage
-  token?: string;            // alias for authToken
-  parse?: FetchMode;         // default "json"
+  headers?: HeadersInit;
+  body?: any;                 // object will be JSON-encoded; FormData passes through
+  authToken?: string;         // explicit token if not in localStorage
+  token?: string;             // alias for authToken
+  parse?: FetchMode;          // default "json"
   signal?: AbortSignal;
   credentials?: RequestCredentials; // defaults to "same-origin"
 };
@@ -75,23 +81,14 @@ export async function fetchJson<T = any>(
   opts: FetchOpts = {}
 ): Promise<T> {
   const raw = String(pathOrUrl || "");
-  const isAbs   = /^https?:\/\//i.test(raw);
-  const isRoot  = raw.startsWith("/"); // root-relative (already based)
-  const url     = isAbs ? raw : isRoot ? raw : apiUrl(raw);
+  const isAbs  = /^https?:\/\//i.test(raw);
+  const isRoot = raw.startsWith("/"); // root-relative (already based)
+  const url    = isAbs ? raw : isRoot ? raw : apiUrl(raw);
+
   const method = (opts.method || (opts.body ? "POST" : "GET")).toUpperCase();
 
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    ...(opts.body &&
-      typeof opts.body === "object" &&
-      !(opts.body instanceof FormData)
-      ? { "Content-Type": "application/json" }
-      : {}),
-    ...(opts.headers || {}),
-  };
-
-  const token = opts.authToken || opts.token || readAuthToken() || "";
-  if (token) headers.Authorization = `Bearer ${token}`;
+  // Build headers via our helper, merging any caller-provided headers.
+  const merged = authHeaders(opts.headers || {}, { token: opts.authToken ?? opts.token });
 
   const body =
     opts.body &&
@@ -102,7 +99,7 @@ export async function fetchJson<T = any>(
 
   const res = await fetch(url, {
     method,
-    headers,
+    headers: merged,
     body,
     signal: opts.signal,
     credentials: opts.credentials ?? "same-origin",
@@ -126,4 +123,16 @@ export async function fetchJson<T = any>(
     case "response": return res as unknown as T;
     default:         return (await res.json()) as T;
   }
+}
+
+/** Back-compat convenience: canonical endpoints derived from the resolved base. */
+export function ensureApiEndpoints(base = ensureApiBase()) {
+  const b = base.replace(/\/+$/, "");
+  return {
+    base: b,
+    balance: joinUrl(b, "/api/billing/balance"),
+    usage:   joinUrl(b, "/api/billing/usage"),
+    ready:   joinUrl(b, "/ready"),
+    health:  joinUrl(b, "/health"),
+  };
 }

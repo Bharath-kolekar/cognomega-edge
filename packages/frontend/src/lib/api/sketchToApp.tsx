@@ -397,11 +397,10 @@ export async function createSketchToAppJob(
 /* ------------------------------ Get Job Status ----------------------------- */
 
 export async function getJobStatus(jobId: string): Promise<JobInfo> {
-  const { data } = await fetchJson<JobStatusResponse>(`/api/jobs/${encodeURIComponent(jobId)}`);
-  const job = (data && (data as any).job) || {};
-  return normalizeJob(jobId, job);
+  const resp = await fetchJson<JobStatusResponse>(`/api/jobs/${encodeURIComponent(jobId)}`);
+  const job = resp?.job ?? {};
+  return normalizeJob(jobId, job as Partial<JobInfo>);
 }
-
 /* --------------------------- Download Job Artifact -------------------------- */
 
 export async function downloadJobArtifact(jobId: string): Promise<void> {

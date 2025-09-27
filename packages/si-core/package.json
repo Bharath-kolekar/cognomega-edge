@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "powershell -NoProfile -Command Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue"
+    "clean": "powershell -NoProfile -Command Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
