@@ -18,6 +18,8 @@ import { registerAuthBillingRoutes } from "./modules/auth_billing";
 // STRICT CORS: single env-driven layer (preflight + response), no duplicates.
 
 import { Hono } from "hono";
+import { handleSiAsk } from "./routes/siAsk";
+import { rankDocuments, RAGDoc } from "./rag/pipeline";
 import { HTTPException } from "hono/http-exception";
 import { neon } from "@neondatabase/serverless";
 
@@ -715,7 +717,7 @@ app.get("/usage", (c) =>
   app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
 );
 
-// -------- SI skills (with queue path) --------
+// -------- SI skills (with queue path) + Chat delegate to handleSiAsk --------
 app.post("/api/si/ask", async (c) => {
   const sql = sqlFor(c);
   await ensureSchema(c, sql);
@@ -730,11 +732,12 @@ app.post("/api/si/ask", async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({}));
-  const skill: string = String(body?.skill || "").trim();
-  const input: string = String(body?.input || "").trim();
   const requestId = (c.get("rid") as string) || requestIdFrom(c.req.raw);
 
-  // Queueable skill
+  const skill: string = String(body?.skill || "").trim();
+  const input: string = String(body?.input || "").trim();
+
+  // --- 1) Queueable skill (unchanged) ---
   if (skill === "sketch_to_app") {
     await sql`
       CREATE TABLE IF NOT EXISTS job (
@@ -761,7 +764,7 @@ app.post("/api/si/ask", async (c) => {
       VALUES (${jobId}, ${email}, 'sketch_to_app', ${payloadText}, 'queued')
     `;
 
-    // Eager trigger here as well for consistency
+    // Eager trigger (unchanged)
     c.executionCtx.waitUntil(
       (async () => {
         try {
@@ -782,12 +785,11 @@ app.post("/api/si/ask", async (c) => {
     );
 
     c.header("X-Job-Id", jobId);
-    // Ensure canonical casing:
     c.header("X-Request-Id", requestId);
     return c.json({ ok: true, job_id: jobId, status: "queued" }, 202);
   }
 
-  // Non-queue skills (billed)
+  // --- 2) Existing non-queued skills path (kept as-is) ---
   const skillToSystem: Record<string, string> = {
     summarize: "You are a precise summarizer. Output 5 crisp bullets only.",
     explain: "Explain simply for a smart 12-year-old. Use short sentences.",
@@ -798,10 +800,89 @@ app.post("/api/si/ask", async (c) => {
     voice_reply: "Compose a short spoken-style answer (2-4 sentences).",
   };
 
-  if (!skill || !(skill in skillToSystem)) {
-    return c.json({ error: "unknown_skill", skill }, 400);
+  const isKnownSkill = !!(skill && skillToSystem[skill]);
+
+  // --- 3) Chat-style requests (delegate to handleSiAsk) ---
+  if (!isKnownSkill) {
+    // Recreate a JSON request for the delegate (we already consumed the body above)
+    const jsonBody = JSON.stringify(body || {});
+    const proxyReq = new Request(c.req.url, {
+      method: "POST",
+      headers: c.req.raw.headers,
+      body: jsonBody,
+    });
+
+    const resp = await handleSiAsk(proxyReq, c.env as any, c.executionCtx);
+    // Try to read payload for logging (but never fail the response if parsing fails)
+    let payload: any = null;
+    try {
+      payload = await resp.clone().json();
+    } catch {
+      payload = null;
+    }
+
+    // Usage + credits logging (best-effort)
+    try {
+      // Rough token estimation from request/response
+      // Request tokens: prefer messages, else prompt
+      const reqText =
+        Array.isArray(body?.messages)
+          ? body.messages.map((m: any) => String(m?.content ?? "")).join("\n")
+          : String(body?.prompt ?? body?.input ?? "");
+      const resText =
+        payload?.message?.content != null
+          ? String(payload.message.content)
+          : payload?.result?.content != null
+          ? String(payload.result.content)
+          : payload?.text != null
+          ? String(payload.text)
+          : "";
+
+      const tokens_in = estTokens(reqText);
+      const tokens_out = estTokens(resText);
+      const cost = creditsForTokens(tokens_in, tokens_out);
+
+      await sql`
+        INSERT INTO usage_event
+          (user_id, route, provider, model, tokens_in, tokens_out, r2_class_a, r2_class_b, r2_gb_retrieved, cost_credits, request_id)
+        VALUES
+          (${userId}, '/api/si/ask', ${payload?.provider ?? "local"}, ${payload?.model ?? "local"}, ${tokens_in}, ${tokens_out}, 0, 0, 0, ${cost}, ${requestId})
+      `;
+
+      await sql`
+        INSERT INTO credit_txn (user_id, amount_credits, reason, meta)
+        VALUES (${userId}, ${-cost}, ${"usage:/api/si/ask"}, ${JSON.stringify({
+          provider: payload?.provider ?? "local",
+          model: payload?.model ?? "local",
+          tokens_in,
+          tokens_out,
+          request_id: requestId,
+          mode: "chat_delegate",
+        }) as any})
+      `;
+
+      const newBal = await getBalance(sql, userId);
+      // propagate headers
+      const h = new Headers(resp.headers);
+      h.set("X-Request-Id", requestId);
+      h.set("X-Credits-Used", String(cost));
+      h.set("X-Credits-Balance", String(newBal));
+      return new Response(await resp.arrayBuffer(), {
+        status: resp.status,
+        headers: h,
+      });
+    } catch {
+      // If logging fails, still return the model response
+      const h = new Headers(resp.headers);
+      h.set("X-Request-Id", requestId);
+      return new Response(await resp.arrayBuffer(), {
+        status: resp.status,
+        headers: h,
+      });
+    }
   }
 
+  // --- 4) Known skill (non-queued) — original logic preserved ---
   const sys =
     skill === "translate" && typeof body?.extras?.to === "string"
       ? `Translate into ${String(body.extras.to).slice(0, 20)}. Keep meaning; no extra commentary.`
@@ -846,12 +927,13 @@ app.post("/api/si/ask", async (c) => {
       tokens_in,
       tokens_out,
       request_id: requestId,
+      mode: "skill",
       skill,
     }) as any})
   `;
 
   const newBal = await getBalance(sql, userId);
-  c.header("X-Request-Id", requestId);          // unified casing
+  c.header("X-Request-Id", requestId);
   c.header("X-Credits-Used", String(cost));
   c.header("X-Credits-Balance", String(newBal));
 
@@ -1092,6 +1174,42 @@ app.get("/api/admin/env-snapshot", (c) => {
   });
 });
 
+// -------- Admin: local embeddings/reranker smoke test (ADMIN ONLY) --------
+// POST /api/admin/rag-rank
+// Body: { query: string, docs: Array<{ id?: string, text: string, meta?: any }>, topK?: number, minScore?: number }
+app.post("/api/admin/rag-rank", async (c) => {
+  const k = (c.req.header("x-admin-key") || c.req.header("x-admin-token") || "").trim();
+  if (!c.env.ADMIN_API_KEY || k !== c.env.ADMIN_API_KEY) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const query = String(body?.query ?? "");
+  const docsIn = Array.isArray(body?.docs) ? body.docs : [];
+  const topK =
+    typeof body?.topK === "number" && Number.isFinite(body.topK) ? Number(body.topK) : undefined;
+  const minScore =
+    typeof body?.minScore === "number" && Number.isFinite(body.minScore)
+      ? Number(body.minScore)
+      : undefined;
+
+  if (!query || docsIn.length === 0) {
+    return c.json({ error: "missing_query_or_docs" }, 400);
+  }
+
+  // Normalize docs
+  const docs: RAGDoc[] = docsIn
+    .map((d: any, i: number) => ({
+      id: typeof d?.id === "string" ? d.id : String(i),
+      text: typeof d?.text === "string" ? d.text : "",
+      meta: d && typeof d === "object" ? (d.meta as any) : undefined,
+    }))
+    .filter((d) => d.text && d.text.trim());
+
+  const { top, used_fallback } = await rankDocuments(c.env as any, query, docs, { topK, minScore });
+  return c.json({ ok: true, used_fallback, results: top });
+});
+
 // -------- TTS: Cartesia proxy (batch + realtime token) --------
 
 /**
@@ -1101,7 +1219,6 @@ app.get("/api/admin/env-snapshot", (c) => {
  */
 app.post("/api/tts/cartesia/batch", async (c) => {
   const key = c.env.CARTESIA_API_KEY || "";
-  const wants = c.req.header("accept") || "";
 
   // Read JSON body (tolerant)
   const body = await c.req.json().catch(() => ({}));
@@ -1270,6 +1387,73 @@ app.put("/api/voice/prefs", async (c) => {
       "Cache-Control": "no-store",
     } as any
   );
+});
+
+// -------- Export CF Worker entrypoints --------
+export default {
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => app.fetch(req, env, ctx),
+
+  // Cron: */5 * * * *  — kicks the queue periodically
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    // Up to 5 jobs per tick
+    const makeReq = () =>
+      new Request("http://internal/admin/process-one", {
+        method: "POST",
+        headers: { "x-admin-task": env.ADMIN_TASK_SECRET || "" },
+      });
+
+    await (async () => {
+      for (let i = 0; i < 5; i++) {
+        const resp = await app.fetch(makeReq(), env as any, ctx as any);
+        if (!resp.ok) break;
+        const text = await resp.text().catch(() => "");
+        if (text.includes('"processed":0')) break; // nothing to do
+      }
+    })();
+  },
+};
+
+// --- AGENTIC AUTOCORRECT ENDPOINT & HELPERS ---
+async function callTogetherAi(messages: {role: string; content: string}[], apiKey: string) {
+  const res = await fetch("https://api.together.xyz/v1/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "StarCoder", prompt: messages.map(m=>m.content).join('\n') })
+  });
+  const out = await res.json();
+  return out.choices?.[0]?.text || "";
+}
+
+async function callHuggingFace(messages: {role: string; content: string}[], apiKey: string) {
+  const res = await fetch("https://api-inference.huggingface.co/models/bigcode/starcoder", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ inputs: messages.map(m=>m.content).join('\n') })
+  });
+  const out = await res.json();
+  return out.generated_text || "";
+}
+
+function runStaticAnalysis(code: string, language: string) {
+  // TODO: Replace with actual ESLint/TS logic
+  if (!code.includes("function")) return ["Code must include at least one function."];
+  return [];
+}
+
+app.post("/api/si/autocorrect", async (c) => {
+  const { code, language } = await c.req.json();
+  const errors = runStaticAnalysis(code, language);
+  if (!errors || errors.length === 0) return c.json({ ok: true, code });
+
+  const prompt = `Fix the following ${language || "code"} so it passes lint/typecheck:\n${code}\n\nErrors:\n${errors.join('\n')}`;
+  let fixedCode = code;
+  const env = c.env;
+  if (env.TOGETHER_API_KEY) {
+    fixedCode = await callTogetherAi([{role:"user",content:prompt}], env.TOGETHER_API_KEY);
+  } else if (env.HF_API_KEY) {
+    fixedCode = await callHuggingFace([{role:"user",content:prompt}], env.HF_API_KEY);
+  }
+  return c.json({ ok: true, code: fixedCode, errors });
 });
 
 // -------- Export CF Worker entrypoints --------
