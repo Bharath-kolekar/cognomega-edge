@@ -30,3 +30,4 @@ build/
 # local test blobs
 *.bin
 
+_worktrees/
