@@ -1,11 +1,11 @@
-﻿# wrangler.toml — Cognomega API Worker (prod)
+# wrangler.toml — Cognomega API Worker (prod)
 # Routes all traffic for api.cognomega.com to a single Worker.
 
 name               = "cognomega-api"
 main               = "src/index.ts"
 compatibility_date = "2025-09-03"
 workers_dev        = false
-logpush            = false   # optional (enable in CF dashboard if you want)
+logpush            = false  # optional (enable in CF dashboard if you want)
 
 # Route everything under the zone to this Worker
 routes = [
@@ -45,46 +45,12 @@ binding     = "R2_UPLOADS"         # direct-upload bucket (auth/billing module)
 bucket_name = "cognomega-uploads"
 
 # ---------- Vars (non-secrets) ----------
-[vars]
-# CORS allowlist (exact origins; no wildcards).
-# Module CORS reads this env var; index.ts also sets CORS and will allow Pages previews.
-ALLOWED_ORIGINS = "https://app.cognomega.com,https://www.cognomega.com,https://cognomega.com,https://cognomega-frontend.pages.dev,http://localhost:5173,http://127.0.0.1:5173"
-WARN_CREDITS = "5"
-USAGE_TTL_DAYS = "30"
-JOB_TTL_DAYS   = "14"
 
-# JWT / issuer for guest tokens (RS256 via PRIVATE_KEY_PEM + KID)
-ISSUER      = "https://api.cognomega.com"
-JWT_TTL_SEC = "3600"
-KID         = "k1"
-
-# Billing config
-CREDIT_PER_1K     = "0.05"       # credits per 1k tokens
-MAX_UPLOAD_BYTES  = "10485760"   # 10MB cap for /api/upload/direct
-
-# Provider order & model defaults (SI/LLM orchestration)
-PREFERRED_PROVIDER = "groq,cfai,openai"
-GROQ_MODEL   = "llama-3.1-8b-instant"
-CF_AI_MODEL  = "@cf/meta/llama-3.1-8b-instruct"
-OPENAI_MODEL = "gpt-4o-mini"
-
-# Upstream base URLs (override only if needed)
-OPENAI_BASE  = "https://api.openai.com/v1"
-# GROQ_BASE  = "https://api.groq.com/openai/v1"  # optional override
-
-# (Optional demo/legacy DB routes used by some index.ts endpoints)
-# NEON_DATABASE_URL = "postgres://..."
-# DATABASE_URL      = "postgres://..."
-
-# ---------- Secrets (set via `npx wrangler secret put ...`) ----------
-# PRIVATE_KEY_PEM     # RS256 PKCS#8 PEM used for signed guest JWTs
-# ADMIN_API_KEY       # for /api/credits/adjust and /api/admin/* routes
-# GROQ_API_KEY        # if using Groq
-# OPENAI_API_KEY      # if using OpenAI
-# CARTESIA_API_KEY    # optional (TTS demo)
-# ADMIN_TASK_SECRET   # for internal /admin/process-one and cron trigger
-# TURNSTILE_SECRET    # (recommended) server-side Turnstile verify for uploads
-
-# ---------- Scheduled tasks ----------
+ALLOW_PROVIDERS = "local"
+PREFERRED_PROVIDER = "local"
 [triggers]
 crons = ["*/5 * * * *"]  # queue kicker for Neon jobs (up to 5 per tick)
+
+[vars]
+ALLOW_PROVIDERS = "local"
+PREFERRED_PROVIDER = "local"

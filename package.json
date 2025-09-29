@@ -12,7 +12,7 @@
     "dev:api": "pnpm -C packages/api dev",
     "install:ci": "pnpm install --frozen-lockfile",
     "lint": "pnpm -r lint --if-present",
-    "typecheck": "pnpm -r typecheck --if-present",
+    "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r test --if-present",
     "verify": "pnpm -s -r run --if-present lint && pnpm -s -r run --if-present typecheck && pnpm -s -r run --if-present build && pnpm -s -r run --if-present test"
   }
