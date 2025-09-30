@@ -8,6 +8,7 @@ import {
   type IntentType,
   tokenize,
   extractEntities,
+  extractEntitiesMap,
   extractTopics
 } from "./nlp-utils"
 
@@ -45,7 +46,7 @@ export interface SemanticAnalysis extends EnhancedNLPAnalysis {
   abstractMeaning: string;
   contextualAmbiguity: number;
   domainSpecificity: number;
-  entities?: SemanticEntity[];
+  semanticEntities?: SemanticEntity[];
   context?: string;
   topics?: string[];
   knowledgeGraph?: KnowledgeGraphNode[];
@@ -166,7 +167,7 @@ class SemanticNLPEngine {
     const basicAnalysis = await nlpProcessor.analyzeTextEnhanced(text);
 
     // Entities, context, topics, knowledge graph (from main)
-    const entities: SemanticEntity[] = extractEntities(text).map((e, idx) => ({
+    const semanticEntities: SemanticEntity[] = extractEntities(text).map((e, idx) => ({
       type: 'ProperNoun',
       value: e,
       position: idx,
@@ -200,19 +201,196 @@ class SemanticNLPEngine {
       abstractMeaning,
       contextualAmbiguity,
       domainSpecificity,
-      entities,
+      semanticEntities,
       context,
       topics,
       knowledgeGraph,
     };
   }
 
-  // ... all other methods from original SemanticNLPEngine remain unchanged ...
+  private extractSemanticConcepts(text: string): string[] {
+    const tokens = tokenize(text.toLowerCase());
+    const concepts: Set<string> = new Set();
+    
+    tokens.forEach((token) => {
+      if (this.conceptGraph.has(token)) {
+        concepts.add(token);
+        this.conceptGraph.get(token)!.forEach((related) => {
+          if (tokens.includes(related)) {
+            concepts.add(related);
+          }
+        });
+      }
+    });
 
-  // Add the methods for extractSemanticConcepts, calculateConceptConfidence, findSemanticSimilarities, etc.
-  // (for brevity, these are exactly as in the previous feat/v0-import block)
+    this.domainKnowledge.forEach((domainConcepts) => {
+      domainConcepts.forEach(({ concept }) => {
+        if (tokens.some((token) => token.includes(concept) || concept.includes(token))) {
+          concepts.add(concept);
+        }
+      });
+    });
 
-  // ... [methods omitted for brevity in this preview; see previous message for full code] ...
+    return Array.from(concepts);
+  }
+
+  private calculateConceptConfidence(text: string, concepts: string[]): Record<string, number> {
+    const confidence: Record<string, number> = {};
+    const tokens = tokenize(text.toLowerCase());
+    
+    concepts.forEach((concept) => {
+      let score = 0;
+      if (tokens.includes(concept)) score += 0.8;
+      if (this.conceptGraph.has(concept)) {
+        const relatedCount = Array.from(this.conceptGraph.get(concept)!).filter((related) =>
+          tokens.includes(related),
+        ).length;
+        score += relatedCount * 0.1;
+      }
+      confidence[concept] = Math.min(score, 1.0);
+    });
+
+    return confidence;
+  }
+
+  private findSemanticSimilarities(text: string): SemanticSimilarity[] {
+    const tokens = tokenize(text.toLowerCase()).filter((t) => this.wordEmbeddings.has(t));
+    const similarities: SemanticSimilarity[] = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      for (let j = i + 1; j < tokens.length; j++) {
+        const vec1 = this.wordEmbeddings.get(tokens[i]);
+        const vec2 = this.wordEmbeddings.get(tokens[j]);
+        if (vec1 && vec2) {
+          const similarity = this.cosineSimilarity(vec1, vec2);
+          if (similarity > 0.5) {
+            similarities.push({
+              word1: tokens[i],
+              word2: tokens[j],
+              similarity,
+            });
+          }
+        }
+      }
+    }
+
+    return similarities.sort((a, b) => b.similarity - a.similarity).slice(0, 10);
+  }
+
+  private cosineSimilarity(vec1: number[], vec2: number[]): number {
+    const dotProduct = vec1.reduce((sum, val, idx) => sum + val * vec2[idx], 0);
+    const mag1 = Math.sqrt(vec1.reduce((sum, val) => sum + val * val, 0));
+    const mag2 = Math.sqrt(vec2.reduce((sum, val) => sum + val * val, 0));
+    return dotProduct / (mag1 * mag2);
+  }
+
+  private generateAbstractMeaning(text: string, concepts: string[]): string {
+    if (concepts.length === 0) {
+      return "General inquiry or statement without specific technical concepts.";
+    }
+
+    const primaryConcepts = concepts.slice(0, 3).join(", ");
+    return `Text involves ${primaryConcepts} with technical focus on ${concepts.length} semantic concepts.`;
+  }
+
+  private calculateContextualAmbiguity(text: string): number {
+    const tokens = tokenize(text.toLowerCase());
+    let ambiguityScore = 0;
+
+    const ambiguousWords = ["it", "this", "that", "they", "thing", "stuff", "something"];
+    ambiguityScore += tokens.filter((t) => ambiguousWords.includes(t)).length * 0.2;
+
+    if (tokens.length < 5) ambiguityScore += 0.3;
+    if (tokens.filter((t) => t.length > 2).length < 3) ambiguityScore += 0.2;
+
+    return Math.min(ambiguityScore, 1.0);
+  }
+
+  private calculateDomainSpecificity(concepts: string[]): number {
+    if (concepts.length === 0) return 0;
+
+    let specificityScore = 0;
+    this.domainKnowledge.forEach((domainConcepts) => {
+      const matchCount = concepts.filter((c) => domainConcepts.some(({ concept }) => concept === c)).length;
+      specificityScore = Math.max(specificityScore, matchCount / concepts.length);
+    });
+
+    return specificityScore;
+  }
+
+  private updateConversationMemory(text: string, intent: IntentType, concepts: string[]): void {
+    this.conversationMemory.previousInputs.push(text);
+    if (this.conversationMemory.previousInputs.length > 10) {
+      this.conversationMemory.previousInputs.shift();
+    }
+
+    concepts.forEach((concept) => {
+      if (!this.conversationMemory.contextualConcepts.includes(concept)) {
+        this.conversationMemory.contextualConcepts.push(concept);
+      }
+      this.conversationMemory.userPreferences[concept] =
+        (this.conversationMemory.userPreferences[concept] || 0) + 1;
+    });
+
+    if (this.conversationMemory.contextualConcepts.length > 20) {
+      this.conversationMemory.contextualConcepts = this.conversationMemory.contextualConcepts.slice(-20);
+    }
+
+    this.conversationMemory.conversationFlow.push({
+      input: text,
+      intent,
+      concepts,
+      timestamp: Date.now(),
+    });
+
+    if (this.conversationMemory.conversationFlow.length > 50) {
+      this.conversationMemory.conversationFlow.shift();
+    }
+  }
+
+  public resolveAmbiguity(text: string, context: string[] = []): string {
+    const tokens = tokenize(text.toLowerCase());
+    const ambiguousWords = tokens.filter((t) => ["it", "this", "that", "they"].includes(t));
+
+    if (ambiguousWords.length === 0) return text;
+
+    let resolved = text;
+    context.forEach((contextItem) => {
+      ambiguousWords.forEach((word) => {
+        resolved = resolved.replace(new RegExp(`\\b${word}\\b`, "gi"), contextItem);
+      });
+    });
+
+    return resolved;
+  }
+
+  public generateContextualSuggestions(input: string): string[] {
+    const concepts = this.extractSemanticConcepts(input);
+    const suggestions: Set<string> = new Set();
+
+    concepts.forEach((concept) => {
+      if (this.conceptGraph.has(concept)) {
+        this.conceptGraph.get(concept)!.forEach((related) => {
+          suggestions.add(`Consider adding ${related} functionality`);
+        });
+      }
+    });
+
+    const topPreferences = Object.entries(this.conversationMemory.userPreferences)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([concept]) => concept);
+
+    topPreferences.forEach((concept) => {
+      suggestions.add(`Based on your preferences: ${concept}`);
+    });
+
+    return Array.from(suggestions).slice(0, 5);
+  }
+
+  public getConversationContext(): ConversationMemory {
+    return { ...this.conversationMemory };
+  }
 
   // Utility: Active knowledge graph (from main)
   private activeKnowledgeGraph(text: string): KnowledgeGraphNode[] {
@@ -256,12 +434,15 @@ export function activeKnowledgeGraph(text: string): KnowledgeGraphNode[] {
 }
 
 export function analyzeSemantics(text: string): SemanticAnalysis {
-  const entities: SemanticEntity[] = extractEntities(text).map((e, idx) => ({
+  const semanticEntities: SemanticEntity[] = extractEntities(text).map((e, idx) => ({
     type: 'ProperNoun',
     value: e,
     position: idx,
     relevance: 0.8,
   }));
+
+  // Convert to entities map for base interface compatibility
+  const entities = extractEntitiesMap(text);
 
   const intent =
     /create|build|generate|make/.test(text) ? "create" :
@@ -284,6 +465,7 @@ export function analyzeSemantics(text: string): SemanticAnalysis {
     context,
     topics,
     knowledgeGraph,
+    semanticEntities,
     // Other fields left undefined for compatibility
     semanticConcepts: [],
     conceptConfidence: {},

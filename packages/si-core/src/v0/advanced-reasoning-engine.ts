@@ -15,6 +15,7 @@ export interface ReasoningStep {
   outcome?: string;
   feedback?: string;
   quantumState?: string;
+  certainty?: number;
 }
 
 // From feat/v0-import

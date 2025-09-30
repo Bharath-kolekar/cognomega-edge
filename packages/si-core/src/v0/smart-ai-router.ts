@@ -20,8 +20,8 @@ class SmartAIRouter {
     if (this.shouldUseGroq(prompt)) {
       try {
         const response = await this.callGroqAPI(prompt);
-        this.trackUsage(response.usage.total_tokens);
-        return response.content;
+        this.trackUsage(response.usage?.total_tokens || 0);
+        return response.choices[0]?.message?.content || "";
       } catch (error) {
         console.log("[v0] Groq failed, falling back to free alternative:", error);
         return this.freeAlternativeResponse(prompt);
@@ -47,11 +47,15 @@ class SmartAIRouter {
     return matches / indicators.length;
   }
 
-  private async callGroqAPI(prompt: string): Promise<{ choices: Array<{ message: { content: string } }> }> {
+  private async callGroqAPI(prompt: string): Promise<{ 
+    choices: Array<{ message: { content: string } }>;
+    usage?: { total_tokens: number };
+  }> {
+    const groqApiKey = typeof process !== 'undefined' && process.env ? process.env.GROQ_API_KEY : undefined;
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${groqApiKey || ''}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
