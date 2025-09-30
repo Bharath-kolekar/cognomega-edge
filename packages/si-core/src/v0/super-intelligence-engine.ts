@@ -1,16 +1,12 @@
-/**
- * Super Intelligence Engine (Resource-Optimized)
- * Adaptive, feedback-driven, modular, memory-capped, edge/cloud fallback.
- */
-import { AdvancedReasoningEngine, ReasoningContext } from './advanced-reasoning-engine';
-import { ContextualMemory } from './contextual-memory';
+import { AdvancedReasoningEngine, ReasoningStep, EvolvingGoal } from './advanced-reasoning-engine';
+import { ContextualMemory, ContextSession } from './contextual-memory';
 import { analyzeSemantics, SemanticAnalysis } from './semantic-nlp-engine';
-import { TaskPayload, RoutingResult, routeToEngine, registerEngine, getRegisteredEngines } from './smart-ai-router';
+import { TaskPayload, RoutingResult, routeToEngine, registerEngine, getRegisteredEngines, EngineType } from './smart-ai-router';
 
 export interface SuperIntelligenceRequest {
   text: string;
   user?: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
   parallel?: boolean;
   agents?: string[];
   modality?: EngineType;
@@ -20,17 +16,17 @@ export interface SuperIntelligenceRequest {
 
 export interface SuperIntelligenceResponse {
   semantics: SemanticAnalysis;
-  memory: any;
-  reasoning: any;
+  memory: ContextSession | undefined;
+  reasoning: ReasoningStep[];
   routed: RoutingResult[] | RoutingResult;
-  observability?: Record<string, any>;
+  observability?: Record<string, unknown>;
   registeredAgents?: string[];
 }
 
 export class SuperIntelligenceEngine {
   reasoning: AdvancedReasoningEngine;
   memory: ContextualMemory;
-  agentRegistry: Record<string, Function> = {};
+  agentRegistry: Record<string, (task: TaskPayload) => unknown> = {};
 
   constructor(memoryLimit: number = 32) {
     this.memory = new ContextualMemory(memoryLimit);
@@ -48,7 +44,7 @@ export class SuperIntelligenceEngine {
     if (semantics.intent !== 'unknown') {
       this.reasoning.addGoal({ description: semantics.intent });
     }
-    const reasoningSteps = this.reasoning.solve(1); // Only process one goal per call for resource savings
+    const reasoningSteps = this.reasoning.solve(1);
 
     let routed: RoutingResult[] | RoutingResult;
     if (request.agents?.length) {
@@ -63,7 +59,7 @@ export class SuperIntelligenceEngine {
       ];
     }
 
-    const observability: Record<string, any> = {
+    const observability: Record<string, unknown> = {
       agentsDispatched: request.agents?.length ?? 3,
       memoryUsage: this.memory.getRecent().length,
       user: request.user,
@@ -80,7 +76,7 @@ export class SuperIntelligenceEngine {
     };
   }
 
-  registerAgent(agentName: string, handler: Function): void {
+  registerAgent(agentName: string, handler: (task: TaskPayload) => unknown): void {
     this.agentRegistry[agentName] = handler;
     registerEngine(agentName, handler);
   }

@@ -1,13 +1,8 @@
-/**
- * ContextualMemory (Resource-Optimized)
- * Compact memory cap, expiration, and compressed serialization.
- * Supports sparse index for efficient queries.
- */
 export type ContextKey = string;
 
 export interface ContextSession {
   key: ContextKey;
-  value: any;
+  value: string | number | boolean | object;
   timestamp: number;
   user?: string;
   expiresAt?: number;
@@ -26,9 +21,16 @@ export class ContextualMemory {
     this.maxEntries = maxEntries;
   }
 
-  set(key: ContextKey, value: any, user?: string, tags?: string[], semanticLabel?: string, quantumTrace?: string, expiresInMs?: number): void {
+  set(
+    key: ContextKey,
+    value: string | number | boolean | object,
+    user?: string,
+    tags?: string[],
+    semanticLabel?: string,
+    quantumTrace?: string,
+    expiresInMs?: number
+  ): void {
     if (this.memory.size >= this.maxEntries) {
-      // Remove oldest to free space
       const oldestKey = Array.from(this.memory.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)[0][0];
       this.memory.delete(oldestKey);
     }
@@ -37,7 +39,6 @@ export class ContextualMemory {
     const session: ContextSession = { key, value, timestamp, user, expiresAt, tags, semanticLabel, quantumTrace };
     this.memory.set(key, session);
 
-    // Sparse tag index
     tags?.forEach(tag => {
       if (!this.tagIndex[tag]) this.tagIndex[tag] = [];
       this.tagIndex[tag].push(key);
@@ -63,11 +64,10 @@ export class ContextualMemory {
   }
 
   getByTag(tag: string): ContextSession[] {
-    return (this.tagIndex[tag] ?? []).map(key => this.memory.get(key)).filter(Boolean) as ContextSession[];
+    return (this.tagIndex[tag] ?? []).map(key => this.memory.get(key)).filter((s): s is ContextSession => Boolean(s));
   }
 
   serialize(): string {
-    // Compressed serialization for disk/KV offload
     return JSON.stringify(Array.from(this.memory.values()));
   }
 

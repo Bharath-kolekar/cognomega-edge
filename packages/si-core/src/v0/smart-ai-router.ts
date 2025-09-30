@@ -1,7 +1,3 @@
-/**
- * Smart AI Router (Resource-Optimized)
- * Modular plugin registry, minimal persistent state, sparse swarm routing.
- */
 export type EngineType =
   | 'reasoning'
   | 'nlp'
@@ -15,10 +11,10 @@ export type EngineType =
 
 export interface TaskPayload {
   type: EngineType;
-  payload: any;
+  payload: Record<string, unknown>;
   user?: string;
   priority?: number;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
   feedback?: string;
   agentSwarm?: string[];
 }
@@ -26,14 +22,16 @@ export interface TaskPayload {
 export interface RoutingResult {
   engine: string;
   status: 'queued' | 'executed' | 'failed' | 'swarmed';
-  output?: any;
+  output?: unknown;
   agentFeedback?: string;
   swarmAgents?: string[];
 }
 
-const engineRegistry: Record<string, Function> = {};
+type EngineHandler = (task: TaskPayload) => unknown;
 
-export function registerEngine(name: string, handler: Function): void {
+const engineRegistry: Record<string, EngineHandler> = {};
+
+export function registerEngine(name: string, handler: EngineHandler): void {
   engineRegistry[name] = handler;
 }
 
@@ -48,7 +46,7 @@ export function routeToEngine(task: TaskPayload): RoutingResult {
     case 'voice': engine = 'voice-engine'; break;
     case 'vision': engine = 'vision-engine'; break;
     case 'quantum': engine = 'quantum-engine'; break;
-    case 'custom': engine = task.payload?.engineName ?? 'custom'; break;
+    case 'custom': engine = task.payload?.engineName as string ?? 'custom'; break;
   }
   if (engineRegistry[engine]) {
     try {

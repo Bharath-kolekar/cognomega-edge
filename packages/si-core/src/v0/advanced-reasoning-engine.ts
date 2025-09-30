@@ -1,28 +1,17 @@
-/**
- * AdvancedReasoningEngine (Optimized for Resource Efficiency)
- * Uses lazy, batched reasoning, sparse fact storage, and adaptive complexity.
- */
 export interface QuantumFact {
   key: string;
-  value: any;
+  value: string | number | boolean | object;
   certainty?: number;
-  superposition?: any[];
+  superposition?: (string | number | boolean | object)[];
   entanglement?: string[];
 }
 
 export interface EvolvingGoal {
   description: string;
-  constraints?: Record<string, any>;
+  constraints?: Record<string, string | number | boolean | object>;
   priority?: number;
   status?: 'pending' | 'in-progress' | 'succeeded' | 'failed';
   evolution?: string[];
-}
-
-export interface ReasoningContext {
-  facts: QuantumFact[];
-  goals: EvolvingGoal[];
-  history?: string[];
-  quantumState?: string;
 }
 
 export interface ReasoningStep {
@@ -34,6 +23,13 @@ export interface ReasoningStep {
   quantumState?: string;
 }
 
+export interface ReasoningContext {
+  facts: QuantumFact[];
+  goals: EvolvingGoal[];
+  history?: string[];
+  quantumState?: string;
+}
+
 export class AdvancedReasoningEngine {
   private history: ReasoningStep[] = [];
   private factIndex: Record<string, number[]> = {}; // Sparse index for fast lookup
@@ -42,8 +38,7 @@ export class AdvancedReasoningEngine {
     this.buildFactIndex();
   }
 
-  private buildFactIndex() {
-    // Sparse index for constraint keys
+  private buildFactIndex(): void {
     this.context.facts.forEach((fact, idx) => {
       Object.keys(fact.constraints ?? {}).forEach(key => {
         if (!this.factIndex[key]) this.factIndex[key] = [];
@@ -52,16 +47,11 @@ export class AdvancedReasoningEngine {
     });
   }
 
-  /**
-   * Batched, lazy reasoning: only processes in small chunks, avoids heavy loops
-   * Adaptive complexity: scales depth based on batchSize and available facts/goals
-   */
   solve(batchSize: number = 2, complexity: number = 1): ReasoningStep[] {
     this.context.quantumState = "superposition";
     let processed = 0;
     for (const goal of this.context.goals) {
       if (processed >= batchSize * complexity) break;
-      // Use sparse index for constraints
       let relevantFacts: QuantumFact[] = [];
       if (goal.constraints) {
         Object.keys(goal.constraints).forEach(key => {
@@ -90,12 +80,12 @@ export class AdvancedReasoningEngine {
     return this.history;
   }
 
-  addFact(fact: QuantumFact) {
+  addFact(fact: QuantumFact): void {
     this.context.facts.push(fact);
     this.buildFactIndex();
   }
 
-  addGoal(goal: EvolvingGoal) {
+  addGoal(goal: EvolvingGoal): void {
     this.context.goals.push(goal);
   }
 

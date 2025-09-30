@@ -1,7 +1,3 @@
-/**
- * Semantic NLP Engine (Resource-Optimized)
- * Uses on-the-fly graph construction, sparse entity/topic extraction.
- */
 import { tokenize, extractEntities, extractTopics } from './nlp-utils';
 
 export interface SemanticEntity {
@@ -14,7 +10,7 @@ export interface SemanticEntity {
 export interface KnowledgeGraphNode {
   id: string;
   label: string;
-  attributes?: Record<string, any>;
+  attributes?: Record<string, string | number | boolean | object>;
   links?: string[];
 }
 
@@ -28,7 +24,6 @@ export interface SemanticAnalysis {
 }
 
 export function activeKnowledgeGraph(text: string): KnowledgeGraphNode[] {
-  // Sparse graph (only proper nouns, linked by sequence)
   const words = tokenize(text);
   return words.filter(w => w[0] === w[0]?.toUpperCase())
     .map((w, idx) => ({

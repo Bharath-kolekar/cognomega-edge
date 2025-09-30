@@ -1,8 +1,3 @@
-/**
- * NLP Utilities (Resource-Optimized)
- * Stateless, low-memory, rule-based, with sparse topic extraction.
- */
-
 export function zeroShotDetectLanguage(text: string): string {
   if (/[\u4e00-\u9fff]/.test(text)) return "zh";
   if (/[\u3040-\u30ff]/.test(text)) return "ja";
@@ -19,7 +14,6 @@ export function extractEntities(text: string): string[] {
 }
 
 export function extractTopics(text: string): string[] {
-  // Sparse topic extraction: only keywords with freq > 1
   const tokens = tokenize(text.toLowerCase());
   const freq: Record<string, number> = {};
   tokens.forEach(token => { freq[token] = (freq[token] || 0) + 1; });
