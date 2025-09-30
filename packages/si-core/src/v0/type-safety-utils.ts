@@ -1,9 +1,39 @@
+// RESOLVED CONFLICT: Merged type-safe React/event/api/storage/form/async utilities (feat/v0-import) with runtime type guards, assertion, schema validation, and inference (main). All features are included.
+
 import type React from "react"
 
-// Type-safe event handler
+// --- Type Guards and Runtime Utilities (main) ---
+export function isString(val: unknown): val is string {
+  return typeof val === 'string';
+}
+export function isNumber(val: unknown): val is number {
+  return typeof val === 'number';
+}
+export function isObject(val: unknown): val is object {
+  return typeof val === 'object' && val !== null;
+}
+export function assertType(condition: boolean, msg?: string): asserts condition {
+  if (!condition) throw new Error(msg || 'Assertion failed');
+}
+export function validateSchema(obj: Record<string, unknown>, schema: Record<string, string>): boolean {
+  for (const key in schema) {
+    if (typeof obj[key] !== schema[key]) return false;
+  }
+  return true;
+}
+export function inferType(val: unknown): string {
+  if (isString(val)) return 'string';
+  if (isNumber(val)) return 'number';
+  if (Array.isArray(val)) return 'array';
+  if (isObject(val)) return 'object';
+  if (typeof val === 'undefined') return 'quantum-undefined';
+  return typeof val;
+}
+
+// --- Type-safe event handler (feat/v0-import) ---
 export type SafeEventHandler<T = HTMLElement> = (event: React.SyntheticEvent<T>) => void
 
-// Type-safe API response wrapper
+// --- API response wrapper ---
 export interface ApiResponse<T> {
   data?: T
   error?: string
@@ -11,7 +41,7 @@ export interface ApiResponse<T> {
   timestamp: number
 }
 
-// Type-safe local storage wrapper
+// --- Local storage wrapper ---
 export interface StorageItem<T> {
   value: T
   timestamp: number
@@ -43,7 +73,6 @@ export class TypeSafeStorage {
 
       const item: StorageItem<T> = JSON.parse(stored)
 
-      // Check version compatibility
       if (item.version !== this.version) {
         console.warn("[TypeSafeStorage] Version mismatch, using default value")
         return defaultValue
@@ -67,7 +96,7 @@ export class TypeSafeStorage {
   }
 }
 
-// Type-safe form validation
+// --- Form validation ---
 export interface ValidationRule<T> {
   validate: (value: T) => boolean
   message: string
@@ -94,7 +123,6 @@ export class FormValidator {
     }
   }
 
-  // Common validation rules
   static rules = {
     required: (message = "This field is required"): ValidationRule<any> => ({
       validate: (value) => value !== null && value !== undefined && value !== "",
@@ -121,7 +149,7 @@ export class FormValidator {
   }
 }
 
-// Type-safe async utilities
+// --- Async utilities ---
 export class AsyncUtils {
   static async withTimeout<T>(
     promise: Promise<T>,

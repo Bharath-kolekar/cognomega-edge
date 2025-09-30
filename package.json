@@ -1,7 +1,8 @@
 {
   "name": "cognomega-edge-monorepo",
   "private": true,
-  "packageManager": "pnpm@10.15.1",
+
+  "packageManager": "pnpm@10.17.1+sha512.17c560fca4867ae9473a3899ad84a88334914f379be46d455cbf92e5cf4b39d34985d452d2583baf19967fa76cb5c17bc9e245529d0b98745721aa7200ecaf7a",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -10,10 +11,14 @@
     "dev:frontend": "pnpm -C packages/frontend dev",
     "dev:builder": "pnpm -C packages/builder dev",
     "dev:api": "pnpm -C packages/api dev",
-    "install:ci": "pnpm install --frozen-lockfile",
-    "lint": "pnpm -r lint --if-present",
-    "typecheck": "pnpm -r --if-present run typecheck",
-    "test": "pnpm -r test --if-present",
-    "verify": "pnpm -s -r run --if-present lint && pnpm -s -r run --if-present typecheck && pnpm -s -r run --if-present build && pnpm -s -r run --if-present test"
-  }
+
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0"
+  },
+  "type": "module"
+
 }

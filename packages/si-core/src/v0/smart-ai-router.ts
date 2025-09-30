@@ -1,54 +1,50 @@
-interface AIConfig {
-  useGroq: boolean
-  fallbackToFree: boolean
-  dailyTokenLimit: number
-  currentUsage: number
+// RESOLVED CONFLICT: Merged SmartAIRouter (Groq/fallback logic) with engine/task routing utilities
+
+// --- AI Routing Config and SmartAIRouter (feat/v0-import) ---
+export interface AIConfig {
+  useGroq: boolean;
+  fallbackToFree: boolean;
+  dailyTokenLimit: number;
+  currentUsage: number;
 }
 
 class SmartAIRouter {
   private config: AIConfig = {
     useGroq: true,
     fallbackToFree: true,
-    dailyTokenLimit: 100000, // Conservative limit
+    dailyTokenLimit: 100000,
     currentUsage: 0,
-  }
+  };
 
   async generateResponse(prompt: string): Promise<string> {
-    // Check if we should use Groq
     if (this.shouldUseGroq(prompt)) {
       try {
-        const response = await this.callGroqAPI(prompt)
-        this.trackUsage(response.usage.total_tokens)
-        return response.content
+        const response = await this.callGroqAPI(prompt);
+        this.trackUsage(response.usage.total_tokens);
+        return response.content;
       } catch (error) {
-        console.log("[v0] Groq failed, falling back to free alternative:", error)
-        return this.freeAlternativeResponse(prompt)
+        console.log("[v0] Groq failed, falling back to free alternative:", error);
+        return this.freeAlternativeResponse(prompt);
       }
     }
-
-    // Use free alternative
-    return this.freeAlternativeResponse(prompt)
+    return this.freeAlternativeResponse(prompt);
   }
 
   private shouldUseGroq(prompt: string): boolean {
-    // Use Groq for complex queries, free alternatives for simple ones
-    const complexity = this.assessComplexity(prompt)
-    const withinLimits = this.config.currentUsage < this.config.dailyTokenLimit
-
-    return this.config.useGroq && complexity > 0.6 && withinLimits
+    const complexity = this.assessComplexity(prompt);
+    const withinLimits = this.config.currentUsage < this.config.dailyTokenLimit;
+    return this.config.useGroq && complexity > 0.6 && withinLimits;
   }
 
   private assessComplexity(prompt: string): number {
-    // Simple complexity scoring
     const indicators = [
       /code|programming|function|algorithm/i,
       /explain|analyze|compare|evaluate/i,
       /creative|story|poem|essay/i,
       /complex|detailed|comprehensive/i,
-    ]
-
-    const matches = indicators.filter((regex) => regex.test(prompt)).length
-    return matches / indicators.length
+    ];
+    const matches = indicators.filter((regex) => regex.test(prompt)).length;
+    return matches / indicators.length;
   }
 
   private async callGroqAPI(prompt: string): Promise<any> {
@@ -64,45 +60,107 @@ class SmartAIRouter {
         max_tokens: 1000,
         temperature: 0.7,
       }),
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`Groq API error: ${response.status}`)
+      throw new Error(`Groq API error: ${response.status}`);
     }
 
-    return response.json()
+    return response.json();
   }
 
   private freeAlternativeResponse(prompt: string): string {
-    // Fallback to our existing free alternatives
-    return this.generateRuleBasedResponse(prompt)
+    return this.generateRuleBasedResponse(prompt);
   }
 
   private generateRuleBasedResponse(prompt: string): string {
-    // Our existing free alternative logic
     const patterns = [
       { pattern: /hello|hi|hey/i, response: "Hello! How can I help you today?" },
       { pattern: /code|programming/i, response: "I can help with coding questions using templates and patterns." },
       { pattern: /explain|what is/i, response: "Let me provide a structured explanation based on common patterns." },
-    ]
-
+    ];
     for (const { pattern, response } of patterns) {
       if (pattern.test(prompt)) {
-        return response
+        return response;
       }
     }
-
-    return "I understand your request. Let me provide a helpful response using available resources."
+    return "I understand your request. Let me provide a helpful response using available resources.";
   }
 
   private trackUsage(tokens: number): void {
-    this.config.currentUsage += tokens
-    // Reset daily usage (implement proper date tracking)
-    const now = new Date()
+    this.config.currentUsage += tokens;
+    // Reset daily usage at midnight
+    const now = new Date();
     if (now.getHours() === 0 && now.getMinutes() === 0) {
-      this.config.currentUsage = 0
+      this.config.currentUsage = 0;
     }
   }
 }
 
-export const aiRouter = new SmartAIRouter()
+export const aiRouter = new SmartAIRouter();
+
+// --- Engine Routing Utilities (main) ---
+export type EngineType =
+  | 'reasoning'
+  | 'nlp'
+  | 'semantic'
+  | 'memory'
+  | 'super'
+  | 'voice'
+  | 'vision'
+  | 'quantum'
+  | 'custom';
+
+export interface TaskPayload {
+  type: EngineType;
+  payload: Record<string, unknown>;
+  user?: string;
+  priority?: number;
+  context?: Record<string, unknown>;
+  feedback?: string;
+  agentSwarm?: string[];
+}
+
+export interface RoutingResult {
+  engine: string;
+  status: 'queued' | 'executed' | 'failed' | 'swarmed';
+  output?: unknown;
+  agentFeedback?: string;
+  swarmAgents?: string[];
+}
+
+type EngineHandler = (task: TaskPayload) => unknown;
+
+const engineRegistry: Record<string, EngineHandler> = {};
+
+export function registerEngine(name: string, handler: EngineHandler): void {
+  engineRegistry[name] = handler;
+}
+
+export function routeToEngine(task: TaskPayload): RoutingResult {
+  let engine = 'unknown-engine';
+  switch (task.type) {
+    case 'reasoning': engine = 'advanced-reasoning-engine'; break;
+    case 'nlp': engine = 'nlp-utils'; break;
+    case 'semantic': engine = 'semantic-nlp-engine'; break;
+    case 'memory': engine = 'contextual-memory'; break;
+    case 'super': engine = 'super-intelligence-engine'; break;
+    case 'voice': engine = 'voice-engine'; break;
+    case 'vision': engine = 'vision-engine'; break;
+    case 'quantum': engine = 'quantum-engine'; break;
+    case 'custom': engine = task.payload?.engineName as string ?? 'custom'; break;
+  }
+  if (engineRegistry[engine]) {
+    try {
+      const output = engineRegistry[engine](task);
+      return { engine, status: 'executed', output, agentFeedback: 'Execution succeeded.' };
+    } catch (e) {
+      return { engine, status: 'failed', output: e, agentFeedback: 'Execution failed.' };
+    }
+  }
+  return { engine, status: 'queued', output: null, agentFeedback: 'Engine not registered.' };
+}
+
+export function getRegisteredEngines(): string[] {
+  return Object.keys(engineRegistry);
+}

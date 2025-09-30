@@ -1,14 +1,22 @@
 {
   "compilerOptions": {
     "target": "ES2020",
+    // Merge: Prefer ES2020 module if using ESM tooling; use CommonJS if Node.js or legacy tooling required.
+    // Here, choose ES2020 for modern compatibility. Change to "CommonJS" if needed.
     "module": "ES2020",
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
+    // Merge: Use "bundler" for moduleResolution if you're using ESM/bundler tooling (e.g. Vite, Webpack).
+    // Add "esModuleInterop" for compatibility with CommonJS/Node-style imports.
     "moduleResolution": "bundler",
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*"]
+  // Merge: Use recursive "src/**/*" from feat/v0-import for completeness.
+  "include": ["src/**/*"],
+  // Merge: Exclude node_modules & dist per main.
+  "exclude": ["node_modules", "dist"]
 }
