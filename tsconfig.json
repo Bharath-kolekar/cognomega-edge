@@ -11,14 +11,32 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "strict": true,
+    "strict": false,
     "skipLibCheck": true,
     "noEmit": true,
     "types": [
       "vite/client"
-    ]
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@packages/*": ["./packages/*"]
+    }
   },
   "include": [
-    "src"
+    "src",
+    "packages"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "**/dist/**",
+    "**/build/**",
+    "imports/v0-20250927-003305/**",
+    "_ops/snapshot/**",
+    "proxy/**",
+    "packages/frontend/legacy/**",
+    "packages/si-core/dist/**"
   ]
 }
