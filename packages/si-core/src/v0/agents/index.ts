@@ -17,7 +17,23 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
-export { MultiModalReasoningAgent } from './multi-modal-reasoning-agent';
+export { 
+  MultiModalReasoningAgent,
+  type ModalityType,
+  type MultiModalInput,
+  type TextInput,
+  type CodeInput,
+  type VisionInput,
+  type AudioInput,
+  type SensorInput,
+  type GestureInput,
+  type MultiModalContext,
+  type ModalityFusion,
+  type ModalityInsight,
+  type Contradiction,
+  type MultiModalReasoning,
+  type MultiModalOutput,
+} from './multi-modal-reasoning-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
