@@ -17,6 +17,7 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
+export { PredictiveDevelopmentAgent } from './predictive-development-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
