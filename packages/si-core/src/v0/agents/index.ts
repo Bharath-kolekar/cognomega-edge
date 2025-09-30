@@ -18,6 +18,19 @@ export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
 
+// Cognitive agent with advanced memory and attention
+export { 
+  CognitiveAgent,
+  type WorkingMemory,
+  type WorkingMemoryItem,
+  type VectorMemory,
+  type MemoryEntry,
+  type MemoryStats,
+  type AttentionNetwork,
+  type AttentionContext,
+  type AttentionFeedback,
+} from './cognitive-agent';
+
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
 
