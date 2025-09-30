@@ -1,6 +1,6 @@
 // RESOLVED CONFLICT: Merged callable NLPProcessor type with additional NLP utilities.
 
-export type IntentType = 'unknown' | 'question' | 'command' | 'chitchat';
+export type IntentType = 'unknown' | 'question' | 'command' | 'chitchat' | 'create' | 'delete' | 'update';
 export type EnhancedNLPAnalysis = {
   intent: IntentType;
   entities: Record<string, string[]>;
