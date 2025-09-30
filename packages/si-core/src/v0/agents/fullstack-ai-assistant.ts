@@ -199,8 +199,9 @@ export class FullStackAIAssistant extends BaseAgent {
     }
 
     // Phase 6: Testing (depends on all development tasks)
+    const devTaskTypes = new Set(['frontend', 'backend', 'database']);
     const devTaskIds = tasks
-      .filter(t => ['frontend', 'backend', 'database'].includes(t.type))
+      .filter(t => devTaskTypes.has(t.type))
       .map(t => t.id);
     
     if (devTaskIds.length > 0) {
