@@ -17,9 +17,9 @@ import { registerAuthBillingRoutes } from "./modules/auth_billing";
 // Immediate background trigger after enqueue (internal-only) + cron fallback.
 // STRICT CORS: single env-driven layer (preflight + response), no duplicates.
 
-import { Hono } from "hono";
+import { Hono, Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { neon } from "@neondatabase/serverless";
+import { neon, NeonQueryFunction } from "@neondatabase/serverless";
 
 // --- Top-level CORS preflight (put before routes) ---
 const BASE_ALLOW_HEADERS = [
@@ -55,7 +55,7 @@ const EXPOSE_ALWAYS = [
  * - Stable Pages domain + preview subdomains
  * - Local dev origins
  */
-function pickAllowedOrigin(req: Request, env: any) {
+function pickAllowedOrigin(req: Request, env: Env): string {
   const origin = req.headers.get("Origin") || "";
   if (!origin) return "";
   const cfPagesStable = "https://cognomega-frontend.pages.dev";
@@ -126,7 +126,7 @@ export interface Env {
   CARTESIA_API_KEY?: string;
 
   /* ---------- Bindings required by the new module ---------- */
-  AI: any;                       // Workers AI binding
+  AI: Ai;                        // Workers AI binding
   KEYS: KVNamespace;             // public JWKS (key "jwks")
   KV_BILLING: KVNamespace;       // credits + usage + jobs
   R2_UPLOADS: R2Bucket;          // direct-upload bucket
@@ -149,8 +149,9 @@ export interface Env {
 }
 
 /** (Legacy) Original Bindings type — kept for reference. Prefer Env above. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type Bindings = {
-  AI: any; // Workers AI binding
+  AI: Ai; // Workers AI binding
 
   // Database
   DATABASE_URL?: string;
@@ -238,7 +239,7 @@ app.use("*", async (c, next) => {
 
 // 1) Workers AI binding probe (used for sanity checks)
 app.get("/api/ai/binding", (c) => {
-  const ok = !!c.env.AI && typeof (c.env.AI as any).run === "function";
+  const ok = !!c.env.AI && typeof (c.env.AI as Ai).run === "function";
   return c.json({ ai_bound: ok }, ok ? 200 : 500);
 });
 
@@ -263,7 +264,7 @@ app.get("/.well-known/jwks.json", async (c) => {
 registerAuthBillingRoutes(app);
 
 // -------- Helpers --------
-const sqlFor = (c: any) => {
+const sqlFor = (c: Context<{ Bindings: Env }>) => {
   const dsn = c.env.DATABASE_URL || c.env.NEON_DATABASE_URL;
   if (!dsn) throw new HTTPException(500, { message: "DATABASE_URL not set" });
   return neon(dsn);
@@ -344,7 +345,7 @@ function defaultModel(provider: string) {
 }
 
 async function runProvider(
-  c: any,
+  c: Context<{ Bindings: Env }>,
   provider: "groq" | "openai" | "workers_ai",
   model: string,
   p: { prompt: string; system: string | null; max_tokens: number; temperature: number }
@@ -374,7 +375,7 @@ async function runProvider(
     });
 
     // Read JSON once, then throw a typed HTTPException if not ok
-    const j: any = await r.json().catch(() => ({}));
+    const j: { choices?: Array<{ message?: { content?: string } }> } = await r.json().catch(() => ({}));
     if (!r.ok) {
       const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
       throw new HTTPException(502, { message: `groq_error:${r.status} ${detail}` });
@@ -406,7 +407,7 @@ async function runProvider(
       body: JSON.stringify(body),
     });
 
-    const j: any = await r.json().catch(() => ({}));
+    const j: { choices?: Array<{ message?: { content?: string } }> } = await r.json().catch(() => ({}));
     if (!r.ok) {
       const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
       throw new HTTPException(502, { message: `openai_error:${r.status} ${detail}` });
@@ -433,9 +434,9 @@ async function runProvider(
   return text.trim();
 }
 
-async function completeWithProvider(c: any, body: any) {
+async function completeWithProvider(c: Context<{ Bindings: Env }>, body: { prompt?: string; system?: string | null; max_tokens?: number; temperature?: number }) {
   const askedProvider =
-    (c.req.header("x-llm-provider") as any) || c.env.LLM_PROVIDER || "groq";
+    (c.req.header("x-llm-provider") as string | undefined) || c.env.LLM_PROVIDER || "groq";
   const askedModel =
     c.req.header("x-llm-model") || c.env.LLM_MODEL || defaultModel(askedProvider);
 
@@ -447,13 +448,13 @@ async function completeWithProvider(c: any, body: any) {
   if (!prompt) throw new HTTPException(400, { message: "Missing prompt" });
 
   const providers: Array<"groq" | "workers_ai" | "openai"> = [
-    askedProvider as any,
+    askedProvider as "groq" | "workers_ai" | "openai",
     ...(askedProvider === "groq" ? (["workers_ai", "openai"] as const) : []),
     ...(askedProvider === "workers_ai" ? (["groq", "openai"] as const) : []),
     ...(askedProvider === "openai" ? (["groq", "workers_ai"] as const) : []),
   ];
 
-  let lastErr: any = null;
+  let lastErr: Error | null = null;
   for (const p of providers) {
     try {
       const model = p === askedProvider ? askedModel : defaultModel(p);
@@ -468,7 +469,8 @@ async function completeWithProvider(c: any, body: any) {
 }
 
 // -------- DB helpers --------
-async function ensureSchema(_c: any, sql: any) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function ensureSchema(_c: Context<{ Bindings: Env }>, sql: NeonQueryFunction<false, false>) {
   // Try extension; some platforms disallow CREATE EXTENSION.
   try {
     await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`;
@@ -511,7 +513,7 @@ async function ensureSchema(_c: any, sql: any) {
   await sql`CREATE INDEX IF NOT EXISTS idx_usage_event_user_time ON usage_event(user_id, created_at DESC)`;
 }
 
-async function ensureUserByEmail(sql: any, email: string): Promise<string> {
+async function ensureUserByEmail(sql: NeonQueryFunction<false, false>, email: string): Promise<string> {
   const r = await sql<{ id: string }>`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
   if (r.length) return r[0].id;
 
@@ -520,7 +522,7 @@ async function ensureUserByEmail(sql: any, email: string): Promise<string> {
   return newId;
 }
 
-async function getBalance(sql: any, userId: string): Promise<number> {
+async function getBalance(sql: NeonQueryFunction<false, false>, userId: string): Promise<number> {
   const r = await sql<{ bal: string }>`
     SELECT COALESCE(SUM(amount_credits), 0)::text AS bal
     FROM credit_txn WHERE user_id = ${userId}
@@ -547,6 +549,7 @@ app.get("/ready", (c) => {
   return c.json({ ok: true, provider, model });
 });
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.post("/auth/guest", async (_c) => {
   const token = crypto.randomUUID();
   const expires_in = 600;
@@ -585,7 +588,7 @@ app.post("/v1/files/upload", async (c) => {
   }
 
   // 3) Store to R2
-  const name = (file as any).name || "upload";
+  const name = (file as File).name || "upload";
   const ct = (file as File).type || "application/octet-stream";
   const ext = name.includes(".") ? name.split(".").pop()! : (ct.split("/")[1] || "bin");
   const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -630,8 +633,8 @@ app.post("/v1/files/upload", async (c) => {
             method: "POST",
             headers: { "x-admin-task": c.env.ADMIN_TASK_SECRET || "" },
           }),
-          c.env as any,
-          c.executionCtx as any
+          c.env as Env,
+          c.executionCtx
         );
         console.log(`[trigger rid=${rid}] internal status=${resp.status}`);
       } catch (e) {
@@ -650,10 +653,11 @@ app.post("/api/v1/llm/complete", async (c) => {
     const body = await c.req.json();
     const { text, provider, model } = await completeWithProvider(c, body);
     return c.json({ text, provider, model });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const error = e as Error;
     const status = e instanceof HTTPException ? e.status : 500;
     return c.json(
-      { error: "upstream_error", status, detail: String(e?.cause || e?.message || e) },
+      { error: "upstream_error", status, detail: String((error as { cause?: string })?.cause || error?.message || error) },
       status
     );
   }
@@ -697,22 +701,22 @@ app.get("/api/billing/usage", async (c) => {
     WHERE user_id = ${uid}
     ORDER BY created_at DESC
     LIMIT 50
-  `) as any[];
+  `) as Array<Record<string, unknown>>;
   return c.json({ events: rows });
 });
 
 // aliases for usage (older UI variations)
 app.get("/api/v1/billing/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as Env, c.executionCtx)
 );
 app.get("/billing/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as Env, c.executionCtx)
 );
 app.get("/api/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as Env, c.executionCtx)
 );
 app.get("/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as Env, c.executionCtx)
 );
 
 // -------- SI skills (with queue path) --------
