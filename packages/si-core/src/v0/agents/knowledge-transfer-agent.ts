@@ -183,7 +183,7 @@ export class KnowledgeTransferAgent extends BaseAgent {
   protected async processTask(task: AgentTask): Promise<AgentResult> {
     this.log('info', `Processing knowledge transfer task: ${task.id}`);
 
-    const request = task.payload as KnowledgeTransferRequest;
+    const request = task.payload as unknown as KnowledgeTransferRequest;
     
     if (!request.sourceDomain || !request.targetDomain) {
       return {
