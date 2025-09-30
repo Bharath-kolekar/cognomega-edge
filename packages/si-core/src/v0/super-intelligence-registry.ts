@@ -158,6 +158,16 @@ export class DualAIEngine implements AIEngine {
   }
 }
 
+// 16. Counterfactual Engine
+export class CounterfactualEngine implements AIEngine {
+  name = "Counterfactual Engine";
+  description = "Counterfactual reasoning and what-if analysis";
+  async process(input: any) {
+    // TODO: Counterfactual reasoning logic
+    return { counterfactual: "Stub counterfactual result." };
+  }
+}
+
 // --- Engine Registry ---
 export const SuperIntelligenceEngines: AIEngine[] = [
   new AIConversationEngine(),
@@ -175,4 +185,5 @@ export const SuperIntelligenceEngines: AIEngine[] = [
   new CreativitySuperIntelligenceEngine(),
   new OmniIntelligenceEngine(),
   new DualAIEngine(),
+  new CounterfactualEngine(),
 ];
