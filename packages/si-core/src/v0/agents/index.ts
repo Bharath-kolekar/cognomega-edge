@@ -18,14 +18,25 @@ export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
 
-// Orchestrator
+// Orchestrators
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
+export { 
+  SwarmIntelligenceOrchestrator,
+  SwarmOrchestrationResult,
+  SwarmAgent,
+  SwarmTask,
+  SwarmCommunication,
+  SwarmConsensus,
+  EmergentSynthesis,
+} from './swarm-intelligence-orchestrator';
 
 // Integration with SuperIntelligenceEngine
 export * from './integration';
 
-// Convenience factory function
+// Convenience factory functions
 import { FullStackAIAssistant } from './fullstack-ai-assistant';
+import { SwarmIntelligenceOrchestrator } from './swarm-intelligence-orchestrator';
+import { IAgent } from './types';
 
 /**
  * Create a new FullStackAIAssistant instance
@@ -33,4 +44,12 @@ import { FullStackAIAssistant } from './fullstack-ai-assistant';
  */
 export function createFullStackAssistant(): FullStackAIAssistant {
   return new FullStackAIAssistant();
+}
+
+/**
+ * Create a new SwarmIntelligenceOrchestrator instance
+ * Coordinates multiple agents for emergent swarm intelligence
+ */
+export function createSwarmOrchestrator(agents?: IAgent[]): SwarmIntelligenceOrchestrator {
+  return new SwarmIntelligenceOrchestrator(agents);
 }
