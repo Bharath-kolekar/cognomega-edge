@@ -5,6 +5,7 @@
  * These declarations are intentionally light-weight and future-proof.
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export {}; // ensure this is treated as a module
 
 declare global {
