@@ -17,6 +17,14 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
+export {
+  MonitoringFeedbackAgent,
+  type MonitoringObservation,
+  type UserFeedback,
+  type DriftDetection,
+  type InterventionAction,
+  type MonitoringConfig,
+} from './monitoring-feedback-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
