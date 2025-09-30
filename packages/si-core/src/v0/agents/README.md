@@ -14,6 +14,7 @@ The multi-agent system consists of:
 6. **DatabaseAgent** - Designs schemas and data access layers
 7. **DevOpsAgent** - Handles deployment, CI/CD, and infrastructure
 8. **TestingAgent** - Generates and executes tests
+9. **KnowledgeTransferAgent** - Transfers learned knowledge between domains
 
 ## Architecture
 
@@ -97,6 +98,37 @@ const task = {
 const result = await planningAgent.execute(task);
 ```
 
+### Using Knowledge Transfer Agent
+
+```typescript
+import { KnowledgeTransferAgent } from '@cognomega/si-core';
+
+const transferAgent = new KnowledgeTransferAgent();
+await transferAgent.initialize();
+
+const transferTask = {
+  id: 'transfer-1',
+  type: 'knowledge-transfer',
+  payload: {
+    sourceDomain: 'web_development',
+    targetDomain: 'ui_components',
+    concepts: ['patterns', 'architecture'],
+    transferDepth: 'deep',
+  },
+  priority: 8,
+  createdAt: Date.now(),
+};
+
+const result = await transferAgent.execute(transferTask);
+
+if (result.success) {
+  const transferResult = result.data as KnowledgeTransferResult;
+  console.log('Transferred concepts:', transferResult.transferredConcepts);
+  console.log('Bridge strength:', transferResult.bridgeStrength);
+  console.log('Insights:', transferResult.insights);
+}
+```
+
 ## Agent Capabilities
 
 ### ProjectPlanningAgent
@@ -147,6 +179,14 @@ const result = await planningAgent.execute(task);
 - Test configuration
 - Code coverage analysis
 - Test utilities
+
+### KnowledgeTransferAgent
+- Cross-domain knowledge transfer
+- Embedding adaptation and transformation
+- Domain bridging and concept mapping
+- Neural transfer network simulation
+- Knowledge synthesis and reuse
+- Applicability assessment
 
 ## Types and Interfaces
 
