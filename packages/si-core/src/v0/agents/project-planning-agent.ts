@@ -128,8 +128,8 @@ export class ProjectPlanningAgent extends BaseAgent {
         platform: 'cloud',
         services: this.inferRequiredServices(requirements),
         deployment: {
-          type: 'container',
-          environment: 'development',
+          type: 'container' as const,
+          environment: 'development' as const,
           config: {},
         },
       },

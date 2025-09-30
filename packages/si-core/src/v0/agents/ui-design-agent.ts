@@ -374,7 +374,7 @@ export class UIDesignAgent extends BaseAgent {
     const framework = requirements.framework?.toLowerCase() || '';
     
     let naming: StyleGuide['naming'] = 'Tailwind';
-    let cssFramework = 'tailwindcss';
+    let cssFramework: string | undefined = 'tailwindcss';
     
     if (framework.includes('styled') || framework.includes('emotion')) {
       naming = 'CSS-in-JS';
