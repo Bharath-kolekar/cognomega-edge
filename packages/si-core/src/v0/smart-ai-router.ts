@@ -1,3 +1,105 @@
+// RESOLVED CONFLICT: Merged SmartAIRouter (Groq/fallback logic) with engine/task routing utilities
+
+// --- AI Routing Config and SmartAIRouter (feat/v0-import) ---
+export interface AIConfig {
+  useGroq: boolean;
+  fallbackToFree: boolean;
+  dailyTokenLimit: number;
+  currentUsage: number;
+}
+
+class SmartAIRouter {
+  private config: AIConfig = {
+    useGroq: true,
+    fallbackToFree: true,
+    dailyTokenLimit: 100000,
+    currentUsage: 0,
+  };
+
+  async generateResponse(prompt: string): Promise<string> {
+    if (this.shouldUseGroq(prompt)) {
+      try {
+        const response = await this.callGroqAPI(prompt);
+        this.trackUsage(response.usage.total_tokens);
+        return response.content;
+      } catch (error) {
+        console.log("[v0] Groq failed, falling back to free alternative:", error);
+        return this.freeAlternativeResponse(prompt);
+      }
+    }
+    return this.freeAlternativeResponse(prompt);
+  }
+
+  private shouldUseGroq(prompt: string): boolean {
+    const complexity = this.assessComplexity(prompt);
+    const withinLimits = this.config.currentUsage < this.config.dailyTokenLimit;
+    return this.config.useGroq && complexity > 0.6 && withinLimits;
+  }
+
+  private assessComplexity(prompt: string): number {
+    const indicators = [
+      /code|programming|function|algorithm/i,
+      /explain|analyze|compare|evaluate/i,
+      /creative|story|poem|essay/i,
+      /complex|detailed|comprehensive/i,
+    ];
+    const matches = indicators.filter((regex) => regex.test(prompt)).length;
+    return matches / indicators.length;
+  }
+
+  private async callGroqAPI(prompt: string): Promise<any> {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 1000,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Groq API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  private freeAlternativeResponse(prompt: string): string {
+    return this.generateRuleBasedResponse(prompt);
+  }
+
+  private generateRuleBasedResponse(prompt: string): string {
+    const patterns = [
+      { pattern: /hello|hi|hey/i, response: "Hello! How can I help you today?" },
+      { pattern: /code|programming/i, response: "I can help with coding questions using templates and patterns." },
+      { pattern: /explain|what is/i, response: "Let me provide a structured explanation based on common patterns." },
+    ];
+    for (const { pattern, response } of patterns) {
+      if (pattern.test(prompt)) {
+        return response;
+      }
+    }
+    return "I understand your request. Let me provide a helpful response using available resources.";
+  }
+
+  private trackUsage(tokens: number): void {
+    this.config.currentUsage += tokens;
+    // Reset daily usage at midnight
+    const now = new Date();
+    if (now.getHours() === 0 && now.getMinutes() === 0) {
+      this.config.currentUsage = 0;
+    }
+  }
+}
+
+export const aiRouter = new SmartAIRouter();
+
+// --- Engine Routing Utilities (main) ---
 export type EngineType =
   | 'reasoning'
   | 'nlp'

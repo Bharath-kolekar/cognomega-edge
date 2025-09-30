@@ -1,0 +1,12 @@
+name: codex-pr-gate
+
+on:
+  pull_request:
+
+jobs:
+  gate:
+    # TEMP WINDOW: fully disabled for fast iteration
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "codex-pr-gate temporarily disabled"

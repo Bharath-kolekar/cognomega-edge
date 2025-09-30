@@ -1,0 +1,26 @@
+﻿name: ci
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.15.1 --activate
+      - name: Install deps (workspace)
+        run: pnpm install --frozen-lockfile
+      - name: Build (skip if package lacks script)
+        run: pnpm -r --if-present run build
+      - name: Typecheck (skip if absent)
+        run: pnpm -r --if-present run check
+      - name: Test (skip if absent)
+        run: pnpm -r --if-present run test

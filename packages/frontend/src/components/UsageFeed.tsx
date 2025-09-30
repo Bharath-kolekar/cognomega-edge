@@ -1,6 +1,6 @@
 // frontend/src/components/UsageFeed.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiUrl, authHeaders, readUserEmail } from "../lib/api/apiBase";
+import { apiUrl, fetchJson, readUserEmail } from "../lib/api/apiBase";
 
 type Props = {
   /** Optional; guests may not have an email. */
@@ -63,14 +63,25 @@ function clip(s: string, n = 120): string {
 
 /* ----------------------------- url helpers ----------------------------- */
 function joinBase(base: Props["apiBase"], path: string): string {
+  // Normalize leading/trailing slashes
   const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
-  if (typeof base !== "string" || !base.trim()) {
-    // Fall back to apiUrl() which knows the resolved base
-    return apiUrl(cleanPath);
-  }
-  return `${base.replace(/\/+$/, "")}${cleanPath}`;
-}
+  let b = typeof base === "string" ? base.trim() : "";
 
+  // Fall back to apiUrl() (which already resolves dev/prod) when no explicit base
+  if (!b) return apiUrl(cleanPath);
+
+  b = b.replace(/\/+$/, ""); // drop trailing slashes
+
+  // If base already ends with /api and path also starts with /api, drop one "api"
+  //   "/api" + "/api/billing/usage"  -> "/api/billing/usage"
+  //   "/api" + "/billing/usage"      -> "/api/billing/usage"
+  if (/\/api$/i.test(b) && /^\/?api(\/|$)/i.test(cleanPath)) {
+    const withoutLeadingApi = cleanPath.replace(/^\/?api/i, ""); // keep leading slash
+    return `${b}${withoutLeadingApi}`;
+  }
+
+  return `${b}${cleanPath}`;
+}
 /* --------------------------- Response normalization --------------------------- */
 function normalizeUsagePayload(data: any): UsageEvent[] {
   // Accept a few common shapes:
@@ -109,6 +120,34 @@ function normalizeUsagePayload(data: any): UsageEvent[] {
   }
 
   return [];
+}
+
+/* ------------------------------ helpers ------------------------------ */
+function isoHoursAgo(h: number) {
+  const d = new Date(Date.now() - h * 3600_000);
+  return d.toISOString();
+}
+
+function usageCandidates(apiBase: Props["apiBase"]) {
+  // Build paths that *don't* double-prefix. joinBase() adds base safely.
+  const base = (p: string) => joinBase(apiBase, p);
+
+  const since7d  = encodeURIComponent(isoHoursAgo(24 * 7));
+  const since48h = encodeURIComponent(isoHoursAgo(48));
+  const q = (p: string) => [
+    p,
+    `${p}?limit=200`,
+    `${p}?since=${since7d}`,
+    `${p}?since=${since48h}`,
+    `${p}?hours=168`,
+  ];
+
+  // Canonical first, then common alternates
+  return [
+    ...q(base("/billing/usage")),      // → /api/billing/usage (dev)
+    ...q(base("/v1/billing/usage")),
+    ...q(base("/usage")),
+  ];
 }
 
 /* --------------------------------- UI ---------------------------------- */
@@ -168,62 +207,56 @@ export default function UsageFeed({
       const ac = new AbortController();
       abortRef.current = ac;
 
-      // Compose headers using authHeaders + optional email
+      // Compose optional email header
       const who =
         (typeof email === "string" && email.trim() ? email.trim() : null) || readUserEmail() || undefined;
 
-      const headers = authHeaders({
+      const headers: Record<string, string> = {
         Accept: "application/json",
         ...(who ? { "X-User-Email": who } : {}),
-      }) as HeadersInit;
+      };
 
-      // Try canonical first, then a few alternates (including /api/v1).
-      const candidates = [
-        joinBase(apiBase, "/api/billing/usage"),
-        joinBase(apiBase, "/api/v1/billing/usage"),
-        joinBase(apiBase, "/billing/usage"),
-        joinBase(apiBase, "/api/usage"),
-        joinBase(apiBase, "/usage"),
-      ];
-
-      let chosen = "";
+      // Try canonical first, then alternates (+ safe query params)
+      const urls = usageCandidates(apiBase);
+      let success = false;
       let data: any = null;
+      let lastErr: any = null;
 
-      for (const url of candidates) {
+      for (const url of urls) {
         try {
-          const r = await fetch(url, {
-            method: "GET",
+          if (debug) console.log("[UsageFeed] probe →", url);
+          data = await fetchJson<any>(url, {
             headers,
-            cache: "no-store",
-            signal: ac.signal,
-            credentials: "omit",
-            mode: "cors",
+            parse: "json",
+            signal: ac.signal, // keep cancel for polling
           });
+          success = true;
+          if (debug) console.log("[UsageFeed] chosen ✓", url);
+          break;
+        } catch (e: any) {
+          const name = String(e?.name || "");
+          const msg  = String(e?.message || "").toLowerCase();
 
-          const ct = (r.headers.get("content-type") || "").toLowerCase();
-          const isJson = ct.includes("application/json");
-          const parsed = isJson ? await r.json() : await r.text();
-
-          if (debug) console.info("[UsageFeed] probe", url, r.status, ct);
-
-          if (r.ok && isJson) {
-            chosen = url;
-            data = parsed;
-            break;
+          // React Strict Mode in dev aborts the first run; treat as noise.
+          if (name === "AbortError" || msg.includes("aborted")) {
+            if (debug) console.debug("[UsageFeed] probe ⓘ aborted (dev/strict):", url);
+            // Silently stop this cycle; the effect immediately re-runs.
+            return;
           }
-        } catch (e) {
-          if (debug) console.warn("[UsageFeed] probe error", url, e);
-          // continue
+
+          lastErr = e;
+          if (debug) console.warn("[UsageFeed] probe ✗", url, e?.message || e);
+          // continue to next candidate
         }
       }
 
-      if (!chosen) {
-        throw new Error("usage endpoint not found");
+      // Only complain if we truly tried everything and nothing worked.
+      if (!success) {
+        if (debug && lastErr) console.error("[UsageFeed] final error:", lastErr);
+        throw new Error("usage endpoint rejected our call (see console for details)");
       }
 
       const list: UsageEvent[] = normalizeUsagePayload(data);
-      if (debug) console.info("[UsageFeed] chosen", chosen, "events", list.length);
-
       setItems(Array.isArray(list) ? list : []);
     } catch (e: any) {
       // On preview domains CORS shows up as "Failed to fetch" — we already skip above,

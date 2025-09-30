@@ -1,476 +1,330 @@
-﻿---
+```markdown
+# Cognomega — Full-Stack AI App Maker (Source of Truth 1/6)
 
-# Cognomega Edge — Monorepo
+> Mission: ship a **production-grade**, **cost-efficient**, **super-intelligent** full-stack application maker with deep AI integration (chat/voice/omni), end-to-end automation, and strict GitHub-only releases — **without dropping any v0 features**.
 
-Monorepo for Cognomega edge services (API, frontend, tools).
-Production domains:
+This README is one of **six** canonical documents. It links to the other five and gives a precise, reproducible path to run, validate, and ship Cognomega from Windows (PowerShell).
 
-* **API**: `https://api.cognomega.com`
-* **App**: `https://app.cognomega.com`
+- Source of Truth Docs (exactly 6):
+  1. **README.md** (this file) — quickstart, rules, commands, links
+  2. **OPS.md** — operating rules, support/SLA, incident, runbooks, SLOs
+  3. **architecture.md** — everything about platform & module design
+  4. **ci-cd.md** — branch policy, pipelines, environments, release
+  5. **tasks.md** — decisions log, tasks, status, ownership
+  6. **roadmap.md** — milestones & scope (delivery targets only)
 
-The **Auth/Billing/Jobs/SI** functionality formerly in `cognomega-auth` has been consolidated into the **API worker**.
+> All other docs/scripts are referenced through these six. No drift.
 
 ---
 
-## Repo layout (high level)
+## 🔒 Non-Negotiable Operating Rules (Locked)
+
+- **Never drop features** or logic from any existing file without explicit confirmation.
+- **No hacks, no shims, no temp fixes** — always root-cause and **permanent** solutions.
+- **One step of one task at a time**; verify output before next step.
+- **No assumptions**; verify first, change later.
+- **100% consistency**: detect and remove drifts, loopholes, pitfalls.
+- **GitHub-only deploys** (no direct deploys). All prod code flows via PR → main → release.
+- **PowerShell on Windows** only for scripts/commands in docs (no bash).
+- **No BOM** in committed text files.
+- **No `gen-jwt`/`genJwt`** helpers or similar shortcuts.
+- **Maximum of 6 source-of-truth docs** until v1 prod is live.
+- **Keep everything from v0 import** (UI/UX, voice assistant + integrations, 8 super-intelligence layers, omni intelligence, etc.). Improve, don’t remove.
+
+See **OPS.md** for the detailed contract.
+
+---
+
+## 🧭 Monorepo Layout
 
 ```
-.
-├─ api/          # Cloudflare Worker (Hono) — API, CORS, Auth/Billing/Jobs/SI, uploads
-├─ frontend/     # Web app (Vite/React, served via Pages)
-├─ openapi/      # API definitions (optional)
-├─ proxy/        # (optional) gateway or example reverse proxies
-├─ tools/        # scripts/utilities
-├─ workers/      # (decommissioned: auth) — keep empty/for future workers
-└─ _ops/         # ops snapshots, CI bits
-```
+
+cognomega-edge/
+├─ packages/
+│  ├─ api/          # Cloudflare Worker (Hono) — API, auth/billing, jobs, SI routes
+│  ├─ frontend/     # Vite + React app (Cognomega Builder UI)
+│  └─ si-core/      # Shared TypeScript library (skills/intelligence core)
+├─ scripts/         # Windows PowerShell utilities (validation, listing, etc.)
+├─ .github/         # CI/CD workflows (see ci-cd.md)
+└─ README.md, OPS.md, architecture.md, ci-cd.md, tasks.md, roadmap.md
+
+````
+
+**Key API additions (kept and expanded):**
+- Global CORS + Request-Id, unified headers exposure
+- **Auth/Billing/Usage** module mounted (`modules/auth_billing`)
+- **/api/si/ask** chat/skills entry point (delegates to `routes/siAsk` where applicable)
+- **/api/admin/rag-rank** (admin-only) — local embeddings/reranker ranking for RAG quality parity
+- **Voice prefs** KV APIs: `GET/PUT /api/voice/prefs`
+- **Jobs** queue + **/admin/process-one** (secured by header key)
+- **JWKS** served from KV at `/.well-known/jwks.json`
+- Local provider **allowlist guard** (env-driven) — enforces `local` only when desired
+
+Everything above is implemented without deleting your existing behavior.
 
 ---
 
-## Deploy & dev
+## 🧩 Prerequisites (Windows)
 
-### Deploy API
-
-```bash
-cd api
-npx wrangler deploy
-```
-
-Wrangler will show bound resources and push `cognomega-api` with:
-
-* Route: `api.cognomega.com/*`
-* Cron: `*/5 * * * *` (queue kick)
-
-### Tail logs
-
-```bash
-cd api
-npx wrangler tail --format=pretty
-```
-
-### Local dev (API)
-
-```bash
-cd api
-npx wrangler dev
-```
-
-> Some bindings (e.g., Workers AI, R2) require cloud mode or proper local stubs. For pure CORS/JSON flows `dev` is fine.
+- **Node.js 22.x** (LTS compatible)  
+- **pnpm 10.x**  
+- **Cloudflare Wrangler 4.40+**  
+- **PowerShell 7.x** (recommended)  
+- Optional for local LLM/RAG quality parity (see *Local AI* below):
+  - Docker Desktop (for qdrant/open-source rerank/embedding servers)
+  - Or a local “OpenAI-compatible” HTTP gateway (e.g., vLLM, llama.cpp server, text-embedding server)
 
 ---
 
-## Environment variables & bindings (API)
+## 🚦 First-Time Setup (Windows, PowerShell)
 
-Set via `wrangler.toml` or dashboard:
-
-**Vars**
-
-* `ALLOWED_ORIGINS` — CSV of allowed origins (e.g. `https://app.cognomega.com,https://www.cognomega.com`)
-* `ISSUER` — JWT issuer (default `https://api.cognomega.com`)
-* `JWT_TTL_SEC` — JWT lifetime (default `3600`)
-* `KID` — JWKS key id (`k1`, etc.)
-* `PREFERRED_PROVIDER` — `groq,cfai,openai` (order of preference)
-* `GROQ_MODEL` — default `llama-3.1-8b-instant`
-* `CF_AI_MODEL` — default `@cf/meta/llama-3.1-8b-instruct`
-* `OPENAI_MODEL` — default `gpt-4o-mini`
-* `OPENAI_BASE` — default `https://api.openai.com/v1`
-* `GROQ_BASE` — default `https://api.groq.com/openai/v1`
-* `CREDIT_PER_1K` — billing rate per 1k tokens (e.g. `0.05`)
-* `MAX_UPLOAD_BYTES` — per-request direct upload cap (default `10485760` = 10MB)
-
-**Secrets**
-
-* `PRIVATE_KEY_PEM` — RS256 (PKCS#8) private key for JWT
-* `ADMIN_API_KEY` — admin endpoints
-* `OPENAI_API_KEY` — if using OpenAI
-* `GROQ_API_KEY` — if using Groq
-
-**Bindings**
-
-* `AI` — Workers AI binding
-* `KEYS` — KV namespace for JWKS (key: `jwks`)
-* `KV_BILLING` — KV namespace (credits + usage + jobs)
-* `R2_UPLOADS` — R2 bucket for direct uploads
-* (optional) `R2` — general R2 bucket for job artifacts (legacy/demo)
-
----
-
-## CORS: what’s allowed
-
-We operate **strict, explicit CORS** and respond to **preflight** properly.
-
-* **Preflight (OPTIONS)** reflects `Access-Control-Request-Headers` from the browser and merges with our base allow list.
-  That means **custom headers** such as `X-Intelligence-Tier` are allowed when the browser requests them.
-* **Normal responses** include `Access-Control-Expose-Headers` so browsers can read usage/billing headers.
-
-**Allowed Methods**: `GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH`
-**Allowed Headers (base)**: `Authorization, Content-Type, X-User-Email, x-user-email, X-Admin-Key, X-Admin-Token`
-**Plus any requested headers**, e.g. `X-Intelligence-Tier`.
-**Exposed Headers** (readable from JS):
-`Content-Type, Content-Disposition, X-Request-Id, X-Credits-Used, X-Credits-Balance, X-Tokens-In, X-Tokens-Out, X-Provider, X-Model`
-**Max-Age**: `86400` seconds
-
-Ensure `ALLOWED_ORIGINS` includes your app origin (e.g., `https://app.cognomega.com`).
-
----
-
-## Public endpoints (consolidated)
-
-* **Auth**
-
-  * `POST /auth/guest` (aliases: `/api/auth/guest`, `/api/v1/auth/guest`) → issue guest JWT (RS256)
-  * `GET /.well-known/jwks.json` → public JWKS (from KV `KEYS`)
-
-* **Credits / Usage (KV-based)**
-
-  * `GET /api/credits` (aliases: `/credits`, `/api/v1/credits`) — returns `{email,balance_credits,updated_at,...}`
-  * `POST /api/credits/adjust` — admin-only; body: `{ email, set? , delta? }`
-  * Usage feed (aliases):
-    `GET|POST /api/billing/usage`
-    aliases: `/api/usage`, `/usage`, `/api/v1/usage`, `/api/v1/billing/usage`
-
-* **SI (Skills/Intelligence)**
-
-  * `POST /api/si/ask` (alias: `/si/ask`) — orchestrates Groq/Workers AI/OpenAI with usage & credits
-
-* **Jobs (KV-based)**
-
-  * `GET|POST /api/jobs` — list or create job (`type: "si"` supported)
-  * `GET|PATCH /api/jobs/:id`
-  * `POST /api/jobs/run` — synchronous run for `type: "si"`
-
-* **Uploads (R2)**
-
-  * `POST /api/upload/direct?filename=<name>` — direct binary upload, requires `Content-Length`, enforces `MAX_UPLOAD_BYTES`
-
-* **AI / Admin**
-
-  * `GET /api/ai/binding` — sanity check Workers AI binding
-  * `POST /api/ai/test` — quick AI round-trip via Workers AI binding
-  * `GET /api/admin/ping` — admin key echo: `{"ok": true/false}`
-  * `POST /api/admin/cleanup` — prune old usage/jobs in KV (dry-run supported)
-
-> Health: `/healthz`, `/api/healthz`, `/api/v1/healthz` are reserved by the outer router. The consolidated module purposely **does not** claim `/ready`.
-
----
-
-## Billing & usage headers
-
-On successful SI calls you’ll see these response headers (and they’re **exposed** to the browser):
-
-* `X-Provider`: `groq` | `cfai` | `openai`
-* `X-Model`: model used (e.g., `llama-3.1-8b-instant`)
-* `X-Tokens-In` / `X-Tokens-Out`: token estimates or upstream counts
-* `X-Credits-Used`: credits for this call
-* `X-Credits-Balance`: remaining credits (for non-guest)
-
----
-
-## Quick API sanity test (CORS + billing headers)
-
-This verifies:
-
-* DNS + routing to `https://api.cognomega.com`
-* Preflight CORS (incl. `X-Intelligence-Tier`)
-* SI endpoint billing headers (`X-Provider`, `X-Model`, tokens, credits)
-* Credits balance & usage feed
-
-### 0) Preflight: CORS (OPTIONS)
+> **GitHub-only deploy:** clone from GitHub; do not patch prod via local deploys.
 
 ```powershell
-curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask"
-```
+# 1) Clone & install
+Set-Location C:\dev
+git clone https://github.com/<YOUR_ORG_OR_USER>/cognomega-edge.git
+Set-Location C:\dev\cognomega-edge
+pnpm install
 
-**Expect** `204` and headers:
+# 2) Create .dev.vars for the API worker (secrets stay local)
+$vars = @'
+# ===== Core CORS & JWT =====
+ALLOWED_ORIGINS=https://app.cognomega.com,https://www.cognomega.com,https://cognomega.com,https://cognomega-frontend.pages.dev,http://localhost:5173,http://127.0.0.1:5173
+ISSUER=https://api.cognomega.com
+JWT_TTL_SEC=3600
+KID=k1
 
-* `Access-Control-Allow-Origin: https://app.cognomega.com` (or your origin)
-* `Access-Control-Allow-Methods: GET,HEAD,POST,PUT,DELETE,OPTIONS,PATCH`
-* `Access-Control-Allow-Headers: ... X-User-Email, X-Admin-Key, X-Admin-Token, X-Intelligence-Tier ...`
-* `Access-Control-Max-Age: 86400`
+# ===== Billing & uploads =====
+CREDIT_PER_1K=0.05
+WARN_CREDITS=5
+MAX_UPLOAD_BYTES=10485760
 
-> Preflight is what must list `X-Intelligence-Tier`; the POST response doesn’t need to echo the allow-list.
+# ===== Local-only guard (dev) =====
+ALLOW_PROVIDERS=local
+PREFERRED_PROVIDER=local
+# Local chat completion gateway (example; used by local routes only)
+LOCAL_LLM_URL=http://127.0.0.1:8000/v1/chat/completions
 
-### 1) Seed credits (admin)
+# ===== Local embeddings/reranker (optional but recommended) =====
+LOCAL_EMBED_URL=http://127.0.0.1:8000/v1/embeddings
+LOCAL_EMBED_MODEL=nomic-embed-text-v1.5
+# LOCAL_RERANK_URL=http://127.0.0.1:8000/v1/rerank
+# LOCAL_API_KEY=your_local_token_if_required
+
+# ===== Admin keys (development only) =====
+# For /api/admin/* secured calls:
+ADMIN_API_KEY=dev-admin-please-override
+ADMIN_TASK_SECRET=dev-task-trigger-key
+
+# ===== Optional external providers (omit if local-only) =====
+# OPENAI_API_KEY=...
+# GROQ_API_KEY=...
+'@
+Set-Content -Encoding UTF8 -NoNewline -LiteralPath C:\dev\cognomega-edge\packages\api\.dev.vars -Value $vars
+````
+
+> `.dev.vars` is auto-loaded by Wrangler/Miniflare and becomes `env.*` at runtime **only in local dev**.
+
+---
+
+## ▶️ Run Locally
+
+**API (Wrangler dev on port 8787):**
 
 ```powershell
-$hdr = @{ "X-Admin-Key" = "<ADMIN_API_KEY>"; "Content-Type" = "application/json" }
-$body = @{ email="vihaan@cognomega.com"; delta=10 } | ConvertTo-Json
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST -Headers $hdr -Body $body
+Set-Location C:\dev\cognomega-edge\packages\api
+npx wrangler dev --port 8787
 ```
 
-### 2) Browser-equivalent SI call (PowerShell)
+**Frontend (Vite dev on 5173):**
 
 ```powershell
-$headers = @{
-  "Origin"              = "https://app.cognomega.com"
-  "Content-Type"        = "application/json"
-  "X-User-Email"        = "vihaan@cognomega.com"
-  "X-Intelligence-Tier" = "pro"
-}
-$body = @{ skill="summarize"; input="hello from cors" } | ConvertTo-Json -Compress
-$r = Invoke-RestMethod -Uri "https://api.cognomega.com/api/si/ask" -Method POST -Headers $headers -Body $body -ResponseHeadersVariable rh
-$r
-$rh # inspect headers
-```
-
-**Expect** `200` with body like:
-
-```json
-{"result":{"content":"Hello, how can I assist you today?"}}
-```
-
-and **exposed** headers:
-
-* `X-Provider: groq`
-* `X-Model: llama-3.1-8b-instant`
-* `X-Tokens-In: <n>`
-* `X-Tokens-Out: <n>`
-* `X-Credits-Used: 0.00x`
-* `X-Credits-Balance: <remaining>`
-
-### 3) Credits & usage
-
-```powershell
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
-
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
-```
-
-### 4) JS fetch (for a quick browser console poke)
-
-```js
-fetch("https://api.cognomega.com/api/si/ask", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-User-Email": "vihaan@cognomega.com",
-    "X-Intelligence-Tier": "pro"
-  },
-  body: JSON.stringify({ skill: "summarize", input: "hello from cors" }),
-}).then(async r => {
-  console.log("status", r.status);
-  console.log("provider", r.headers.get("x-provider"));
-  console.log("model", r.headers.get("x-model"));
-  console.log("tokens", r.headers.get("x-tokens-in"), r.headers.get("x-tokens-out"));
-  console.log("credits used", r.headers.get("x-credits-used"));
-  console.log("balance", r.headers.get("x-credits-balance"));
-  return r.json();
-});
+Set-Location C:\dev\cognomega-edge\packages\frontend
+pnpm run dev
+# open http://localhost:5173
 ```
 
 ---
 
-## Direct upload (R2) test
+## 🧪 Validate, Typecheck, Build, Test
+
+**Single-package checks:**
 
 ```powershell
-# Example: 1MB random file
-$bytes = new-object byte[] (1024*1024); (new-object Random).NextBytes($bytes); [IO.File]::WriteAllBytes("random.bin", $bytes)
-
-Invoke-RestMethod `
-  -Uri "https://api.cognomega.com/api/upload/direct?filename=random.bin" `
-  -Method POST `
-  -Headers @{ "X-User-Email"="vihaan@cognomega.com"; "Content-Type"="application/octet-stream" } `
-  -InFile "random.bin" `
-  -ContentType "application/octet-stream"
+# API
+pnpm -C packages/api run build          # dry-run bundle via wrangler
+# Frontend
+pnpm -C packages/frontend run typecheck
+pnpm -C packages/frontend run build
+# SI core
+pnpm -C packages/si-core run typecheck
+pnpm -C packages/si-core run build
 ```
 
-**Expect** `200` with `{ ok, key, size, etag?, version?, content_type }`.
-If `413 payload_too_large`, adjust `MAX_UPLOAD_BYTES`.
-
----
-
-## Troubleshooting
-
-* **CORS blocked**
-
-  * Ensure `ALLOWED_ORIGINS` includes your app origin (`https://app.cognomega.com`).
-  * Confirm preflight (`OPTIONS`) lists any **custom headers** your app sends (e.g., `X-Intelligence-Tier`). We reflect browser-requested headers and merge with our base allow-list.
-
-* **402 Payment Required on `/api/si/ask`**
-
-  * Top up via `/api/credits/adjust` (admin). Example:
-
-    ```powershell
-    Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST `
-      -Headers @{ 'X-Admin-Key'='<ADMIN_API_KEY>'; 'Content-Type'='application/json' } `
-      -Body (@{ email='vihaan@cognomega.com'; delta=10 } | ConvertTo-Json)
-    ```
-  * Guests (`sub` like `guest:<uuid>`) can use free tier if configured.
-
-* **`ai_bound: false`** on `/api/ai/binding`
-
-  * Check Workers AI binding is attached to the worker.
-
-* **DNS errors in browser**
-
-  * Verify resolution:
-
-    ```powershell
-    Resolve-DnsName api.cognomega.com
-    ```
-  * If corporate DNS/proxy is in play, try a different network or ensure Cloudflare IPs aren’t blocked.
-
-* **Uploads failing**
-
-  * Ensure `Content-Length` is sent (curl/Invoke-RestMethod with `-InFile` sets it).
-  * Check `MAX_UPLOAD_BYTES`.
-
----
-
-## Decommission note (auth worker)
-
-`workers/auth` has been removed. All routes previously served by **cognomega-auth** are now in the **API worker**:
-
-* Guest auth & JWKS
-* Credits & usage
-* SI/Jobs
-* Admin & cleanup
-* Direct uploads
-
-Search guardrails and CI/CD have been cleaned to remove old deploy jobs for the auth worker.
-
----
-
-## Security
-
-* Admin routes require `X-Admin-Key` (and/or `X-Admin-Token` where applicable).
-* JWTs are signed with RS256; public keys are served at `/.well-known/jwks.json`.
-* CORS is strict and origin-locked via `ALLOWED_ORIGINS`.
-
----
-
-## Appendix: Handy curls (PowerShell-safe)
-
-Preflight:
+**Workspace verify:**
 
 ```powershell
-curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask"
+Set-Location C:\dev\cognomega-edge
+pnpm run verify
 ```
 
-SI ask:
+**Validator (drift/consistency checks) + capture log:**
 
 ```powershell
-curl.exe -i -X POST "https://api.cognomega.com/api/si/ask" `
-  -H "Origin: https://app.cognomega.com" `
-  -H "Content-Type: application/json" `
-  -H "X-User-Email: vihaan@cognomega.com" `
-  -H "X-Intelligence-Tier: pro" `
-  --data "{\"skill\":\"summarize\",\"input\":\"hello from cors\"}"
-```
-
-Credits:
-
-```powershell
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
-```
-
-Usage:
-
-```powershell
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
-```
-
-Admin ping:
-
-```powershell
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/ping' -Headers @{ 'X-Admin-Key'='<ADMIN_API_KEY>' }
-```
-
-Cleanup (dry-run):
-
-```powershell
-Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/cleanup' -Method POST `
-  -Headers @{ 'X-Admin-Key'='<ADMIN_API_KEY>'; 'Content-Type'='application/json' } `
-  -Body (@{ kind='both'; older_than_days=30; limit=500; dry_run=$true } | ConvertTo-Json)
+Set-Location C:\dev\cognomega-edge
+$ts  = Get-Date -Format 'yyyyMMdd-HHmmss'
+$log = "C:\dev\validate-$ts.txt"
+.\scripts\validate.ps1 2>&1 | Tee-Object -FilePath $log | Out-Null
+Write-Host "`nSaved: $log"
 ```
 
 ---
----
 
-# API Contract & Operator Probes (Production)
+## 🧠 Local AI (Embeddings/Reranker, High-Quality RAG)
 
-This project exposes **one** authentication endpoint and **one** JWKS endpoint in production:
+You can keep development entirely **local** while preserving search/RAG quality:
 
-- **`POST /auth/guest`** — issues **RS256** guest JWTs (signed using `PRIVATE_KEY_PEM`, **PKCS#8**).  
-- **`GET /.well-known/jwks.json`** — JWKS used to verify tokens issued by `/auth/guest`.
+* **Embeddings:** point `LOCAL_EMBED_URL` to an OpenAI-compatible `/v1/embeddings` endpoint (e.g., vLLM, llama.cpp embedding server, or a slim embeddings microservice).
+* **Reranker:** if `LOCAL_RERANK_URL` is unavailable, the API automatically falls back to **embedding-based cosine similarity** (works offline). For **best quality**, run a local rerank server and set `LOCAL_RERANK_URL`.
 
-### CORS & Exposed Headers (stable)
+> The public endpoints are **unchanged**. Local ranking is accessed through **admin-only** helper routes or internal code paths — safe for production posture while enabling high-fidelity development.
 
-Frontend clients can rely on the following response headers being **exposed** (readable via `fetch`):
-
-- `Content-Type`
-- `Content-Disposition`
-- `X-Request-Id`
-- `X-Credits-Used`
-- `X-Credits-Balance`
-- `X-Tokens-In`
-- `X-Tokens-Out`
-- `X-Provider`
-- `X-Model`
-
-**Preflight** (`OPTIONS`) merges the browser’s `Access-Control-Request-Headers` with the base allow-list. Ensure `ALLOWED_ORIGINS` contains your app origin(s).
-
-### Billing/Usage Source of Truth (today)
-
-- **KV** is the canonical storage for **credits**, **usage**, and **jobs**:
-  - `KEYS` KV: serves JWKS at `/.well-known/jwks.json` (key: `jwks`).
-  - `KV_BILLING` KV: `balance:*`, `usage:*`, and `jobs:*` keys.
-- A future **Neon** migration is tracked for analytics/reporting only; production billing remains in **KV** until the cutover plan is approved.
-
-### Operator Probes (summary)
-
-> Full details and acceptance checklist live in `OPS.md`. Use these quick probes for smoke checks.
-
-**Preflight (CORS)**
+**Admin-only test (RAG rank):**
 
 ```powershell
-curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask" ^
-  -H "Origin: https://app.cognomega.com" ^
-  -H "Access-Control-Request-Method: POST" ^
-  -H "Access-Control-Request-Headers: content-type, x-user-email, x-intelligence-tier"
+# Terminal 1 (API): npx wrangler dev --port 8787  (see above)
+# Terminal 2 (client):
+$ADMIN_API_KEY = Read-Host 'Enter ADMIN_API_KEY'
+$uri = 'http://127.0.0.1:8787/api/admin/rag-rank'
+
+$docs = @(
+  @{ id="a"; text="This document explains account password reset steps." }
+  @{ id="b"; text="Unrelated: shipping timelines and returns." }
+  @{ id="c"; text="Support guide: to reset your password, click Forgot Password." }
+)
+$body = @{ query="how to reset a password"; docs=$docs; topK=2 } | ConvertTo-Json -Depth 6
+
+$response = Invoke-RestMethod -Uri $uri -Method POST `
+  -ContentType 'application/json' `
+  -Headers @{ 'x-admin-key' = $ADMIN_API_KEY } `
+  -Body $body
+
+$response | ConvertTo-Json -Depth 10
 ```
-
-**JWKS (first 120 chars)**
-
-```powershell
-$jwks = Invoke-WebRequest -UseBasicParsing "https://api.cognomega.com/.well-known/jwks.json"
-$jwks.Content.Substring(0, [Math]::Min(120, $jwks.Content.Length))
-```
-
-**AI binding**
-
-```powershell
-Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding"
-# -> { "ai_bound": true }
-```
-
-**Guest token (RS256)**
-
-```powershell
-$g = Invoke-RestMethod -Method POST -Uri "https://api.cognomega.com/auth/guest"
-$tok = $g.token
-```
-
-### Route Ownership (guardrail)
-
-- Cloudflare Worker: **`cognomega-api`** is the **only** worker with a route matching `api.cognomega.com/*`.
-- `api/wrangler.toml` declares exactly one zone route:
-  ```toml
-  routes = [
-    { pattern = "api.cognomega.com/*", zone_name = "cognomega.com" }
-  ]
-  ```
-
-### Change Management (GitHub-only)
-
-- All doc/code changes (including `OPS.md` and `wrangler.toml`) land via **PR to `main`**.
-- No direct CF changes without a corresponding Git commit. If routes/DNS change, attach a fresh **route audit** proof to `ops/proofs/`.
 
 ---
 
-## Documentation
+## 🌐 CORS, Request-Id, and Headers
 
-- **Product & UI/UX**: [docs/README.md](docs/README.md)  
-- **Operations**: [docs/OPS.md](docs/OPS.md)  
-- **CI/CD**: [docs/ci-cd.md](docs/ci-cd.md)
+* **CORS allowlist** driven by `ALLOWED_ORIGINS` (exact matches), Pages preview, and local dev.
+* **Request-Id** is added to **every** response (`X-Request-Id`); exposed headers include:
 
+  * `X-Credits-Used`, `X-Credits-Balance`, `X-Tokens-In`, `X-Tokens-Out`, `X-Provider`, `X-Model`
+* Preflight handled at the **top** of the Hono app; unified layer avoids duplication.
+
+---
+
+## 🧾 Billing/Usage & Credits
+
+* `/api/billing/balance`, `/api/billing/usage`, and legacy aliases (e.g., `/api/credits`) are present and kept.
+* Credits are charged per tokens in/out (default `CREDIT_PER_1K=0.05` credits per 1k tokens).
+* Low balance guard: returns `402` with `insufficient_credits` error.
+
+See **architecture.md** for the pricing/costing model and **OPS.md** for SLAs.
+
+---
+
+## 🔐 Admin & Jobs
+
+* `POST /admin/process-one` — internal job processor (requires `x-admin-key` or `x-admin-task`).
+* Cron trigger runs every 5 minutes (max 5 jobs/tick).
+* R2 upload/download helpers included; jobs table in Neon/Postgres maintained with indexes.
+
+---
+
+## 🧬 SI Entry Point (Chat & Skills)
+
+* `POST /api/si/ask`:
+
+  * **Queueable** skill `sketch_to_app`: enqueues a job, triggers internal processor immediately, 202 Accepted with `X-Job-Id`.
+  * **Non-queued** skills (e.g., `summarize`, `translate`, `rag_lite`) go through the multi-provider LLM router.
+  * **Chat-style** payloads are delegated to `routes/siAsk` for richer orchestration (kept and mounted).
+* Usage and credit debits are recorded uniformly.
+
+---
+
+## 🧱 Provider Allow-List (Local-Only Lock)
+
+To lock dev to **local only**, set:
+
+```
+ALLOW_PROVIDERS=local
+PREFERRED_PROVIDER=local
+```
+
+The runtime guard enforces this and blocks remote providers in dev. Public API shape is unchanged.
+
+---
+
+## 🔁 GitHub-Only Release Flow (Short)
+
+* Create/change via branch → PR → CI checks → merge to main → GitHub Action deploys staging/prod.
+* No direct production deploys from developer machines.
+* See **ci-cd.md** for full pipeline, environments, and rollback steps.
+
+---
+
+## 🧩 v0 Import — Preservation Guarantee
+
+All v0 content (UI/UX, voice assistant/integrations, 8 layers of super-intelligence, omni intelligence, and the full **239** imported files) is preserved. Enhancements are additive. If something must change, we will call it out **explicitly** and obtain confirmation before proceeding.
+
+---
+
+## 🧰 Useful PowerShell Helpers
+
+List wrangler configs:
+
+```powershell
+Set-Location C:\dev\cognomega-edge
+.\scripts\list-wrangler.ps1
+# Or:
+.\scripts\list-wrangler.ps1 -Root "C:\dev" -OutCsv "C:\dev\wrangler-report.csv"
+```
+
+Re-run validator and collect FAIL lines:
+
+```powershell
+Set-Location C:\dev\cognomega-edge
+$ts  = Get-Date -Format 'yyyyMMdd-HHmmss'
+$log = "C:\dev\validate-$ts.txt"
+.\scripts\validate.ps1 2>&1 | Tee-Object -FilePath $log | Out-Null
+Select-String -Path $log -Pattern '^\[FAIL\]' | ForEach-Object { $_.Line }
+```
+
+---
+
+## 📚 Deep Dives
+
+* [OPS.md](./OPS.md) — Operating contract, SLAs/SLOs, incident, runbooks.
+* [architecture.md](./architecture.md) — Modules, data flows, models, RAG, security.
+* [ci-cd.md](./ci-cd.md) — Branch strategy, checks, environments, releases.
+* [tasks.md](./tasks.md) — Decisions, tasks, statuses, owners (single source of tasks).
+* [roadmap.md](./roadmap.md) — Milestones, scope, when/what and acceptance.
+
+---
+
+## 🆘 Support
+
+For any inconsistency or suspected drift, open a GitHub issue labeled **type:drift** with:
+
+* Repro steps
+* Expected vs actual
+* Logs (`validate-*.txt`, Wrangler console excerpts)
+* File paths and commit SHA
+
+We will triage within the SLA windows defined in **OPS.md**.
+
+---
+
+```

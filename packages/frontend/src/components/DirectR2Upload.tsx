@@ -1,3 +1,4 @@
+// src/components/DirectR2Upload.tsx
 import React, { useRef, useState } from "react";
 import { apiUrl } from "@/lib/api/apiBase";
 
@@ -53,8 +54,9 @@ export default function DirectR2Upload({
       : null;
 
   function buildUrl(path: string): string {
-    if (resolvedBase) return `${resolvedBase}${path}`;
-    return apiUrl(path);
+    const clean = `/${String(path || "").replace(/^\/+/, "")}`;
+    if (resolvedBase) return `${resolvedBase}${clean}`;
+    return apiUrl(clean);
   }
 
   function displayApiBase(): string {
@@ -177,7 +179,9 @@ export default function DirectR2Upload({
           </div>
           <div className="mt-2 text-xs text-gray-500">
             Retrieve via Wrangler:{" "}
-            <code>wrangler r2 object get --remote "cognomega-uploads/{{key}}"</code>
+            <code className="break-all">
+              {`wrangler r2 object get --remote "cognomega-uploads/${result.key}"`}
+            </code>
           </div>
         </div>
       )}

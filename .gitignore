@@ -30,4 +30,7 @@ build/
 # local test blobs
 *.bin
 
+# local dev artifacts
+_reports/
 _worktrees/
+
