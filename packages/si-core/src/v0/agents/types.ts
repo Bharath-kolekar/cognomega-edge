@@ -213,7 +213,8 @@ export type AgentType =
   | 'database'
   | 'devops'
   | 'testing'
-  | 'orchestrator';
+  | 'orchestrator'
+  | 'market-adaptive';
 
 export interface AgentTask {
   id: string;
@@ -332,4 +333,130 @@ export interface OrchestrationResult {
   errors: Map<string, string>;
   duration: number;
   summary: string;
+}
+
+// ============================================================================
+// Market Adaptive Agent Types
+// ============================================================================
+
+export interface RealTimeMarketData {
+  timestamp: number;
+  marketTrends: MarketTrend[];
+  industryMetrics: IndustryMetrics;
+  economicIndicators: EconomicIndicators;
+  consumerBehavior: ConsumerBehavior;
+}
+
+export interface MarketTrend {
+  id: string;
+  category: string;
+  description: string;
+  velocity: 'slow' | 'moderate' | 'fast' | 'rapid';
+  impact: 'low' | 'medium' | 'high' | 'critical';
+  confidence: number;
+  source: string;
+}
+
+export interface IndustryMetrics {
+  growthRate: number;
+  marketSize: number;
+  competitorCount: number;
+  innovationIndex: number;
+  regulatoryChanges: string[];
+}
+
+export interface EconomicIndicators {
+  gdpGrowth: number;
+  inflationRate: number;
+  consumerConfidence: number;
+  investmentTrends: string[];
+}
+
+export interface ConsumerBehavior {
+  preferenceShifts: string[];
+  adoptionRate: number;
+  purchasingPower: number;
+  demographicTrends: string[];
+}
+
+export interface CompetitiveIntelligence {
+  timestamp: number;
+  competitors: CompetitorProfile[];
+  marketPositioning: MarketPosition;
+  threats: ThreatAssessment[];
+  opportunities: OpportunityInsight[];
+}
+
+export interface CompetitorProfile {
+  id: string;
+  name: string;
+  marketShare: number;
+  strengths: string[];
+  weaknesses: string[];
+  recentMoves: CompetitorMove[];
+  strategy: string;
+}
+
+export interface CompetitorMove {
+  type: 'product-launch' | 'pricing-change' | 'partnership' | 'acquisition' | 'expansion' | 'pivot';
+  description: string;
+  timestamp: number;
+  impact: 'low' | 'medium' | 'high' | 'critical';
+  responseRequired: boolean;
+}
+
+export interface MarketPosition {
+  currentRank: number;
+  differentiators: string[];
+  vulnerabilities: string[];
+  competitiveAdvantages: string[];
+}
+
+export interface ThreatAssessment {
+  id: string;
+  type: 'competitive' | 'technological' | 'regulatory' | 'economic' | 'operational';
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  probability: number;
+  timeframe: 'immediate' | 'short-term' | 'medium-term' | 'long-term';
+  mitigationStrategies: string[];
+}
+
+export interface OpportunityInsight {
+  id: string;
+  type: 'market-gap' | 'emerging-trend' | 'competitor-weakness' | 'technology-shift' | 'regulatory-change';
+  description: string;
+  potential: 'low' | 'medium' | 'high' | 'transformative';
+  confidence: number;
+  timeWindow: string;
+  requirements: string[];
+}
+
+export interface AdaptationStrategy {
+  id: string;
+  timestamp: number;
+  objectives: string[];
+  actions: StrategyAction[];
+  expectedOutcomes: string[];
+  risks: string[];
+  timeframe: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  resources: ResourceRequirement[];
+}
+
+export interface StrategyAction {
+  id: string;
+  type: 'defensive' | 'offensive' | 'exploratory' | 'consolidation';
+  description: string;
+  priority: number;
+  dependencies: string[];
+  estimatedEffort: string;
+  successCriteria: string[];
+}
+
+export interface ResourceRequirement {
+  type: 'human' | 'financial' | 'technological' | 'operational';
+  description: string;
+  quantity: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
 }
