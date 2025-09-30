@@ -17,6 +17,17 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
+export { StrategicSolverAgent } from './strategic-solver-agent';
+
+// Export strategy interfaces for external use
+export type {
+  ProblemSolvingStrategy,
+  StrategyPerformanceTracker,
+  ProblemContext,
+  StrategyResult,
+  StrategyExecutionRecord,
+  StrategyMetrics,
+} from './strategic-solver-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
@@ -33,4 +44,13 @@ import { FullStackAIAssistant } from './fullstack-ai-assistant';
  */
 export function createFullStackAssistant(): FullStackAIAssistant {
   return new FullStackAIAssistant();
+}
+
+/**
+ * Create a new StrategicSolverAgent instance
+ * For adaptive problem-solving with strategy selection and tracking
+ */
+import { StrategicSolverAgent } from './strategic-solver-agent';
+export function createStrategicSolver(): StrategicSolverAgent {
+  return new StrategicSolverAgent();
 }
