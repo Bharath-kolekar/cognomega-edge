@@ -14,6 +14,7 @@ The multi-agent system consists of:
 6. **DatabaseAgent** - Designs schemas and data access layers
 7. **DevOpsAgent** - Handles deployment, CI/CD, and infrastructure
 8. **TestingAgent** - Generates and executes tests
+9. **CounterfactualReasoner** - Generates and learns from counterfactual scenarios for decision making
 
 ## Architecture
 
@@ -97,6 +98,40 @@ const task = {
 const result = await planningAgent.execute(task);
 ```
 
+### Using CounterfactualReasoner
+
+```typescript
+import { CounterfactualReasoner } from '@cognomega/si-core';
+
+const reasoner = new CounterfactualReasoner();
+await reasoner.initialize();
+
+const task = {
+  id: 'cf-analysis-1',
+  type: 'counterfactual-reasoning',
+  payload: {
+    situation: 'User signup conversion rate dropped from 40% to 25%',
+    decision: 'Added multi-step onboarding form',
+    outcome: 'Lower conversion but higher user retention',
+    context: {
+      timeframe: '2 weeks',
+      users_affected: 5000
+    },
+    analysisDepth: 'deep'
+  },
+  priority: 8,
+  createdAt: Date.now(),
+};
+
+const result = await reasoner.execute(task);
+
+if (result.success) {
+  console.log('Scenarios:', result.data.scenarios);
+  console.log('Learnings:', result.data.learnings);
+  console.log('Key Insights:', result.data.keyInsights);
+}
+```
+
 ## Agent Capabilities
 
 ### ProjectPlanningAgent
@@ -147,6 +182,14 @@ const result = await planningAgent.execute(task);
 - Test configuration
 - Code coverage analysis
 - Test utilities
+
+### CounterfactualReasoner
+- Counterfactual scenario generation
+- What-if analysis for decision making
+- Causal inference and factor identification
+- Decision impact analysis
+- Learning from alternative outcomes
+- Pattern identification across scenarios
 
 ## Types and Interfaces
 
