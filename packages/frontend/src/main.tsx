@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/main.tsx
 // Force safe cross-origin defaults + strip XRW everywhere
 {

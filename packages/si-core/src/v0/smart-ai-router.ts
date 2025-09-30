@@ -47,7 +47,7 @@ class SmartAIRouter {
     return matches / indicators.length;
   }
 
-  private async callGroqAPI(prompt: string): Promise<any> {
+  private async callGroqAPI(prompt: string): Promise<{ choices: Array<{ message: { content: string } }> }> {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {

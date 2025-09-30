@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/pages/SketchToApp.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, authHeaders, readUserEmail } from "../lib/api/apiBase";
@@ -209,7 +210,6 @@ export default function SketchToApp() {
       setError(null);
       startPolling(id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchJSON = useCallback(

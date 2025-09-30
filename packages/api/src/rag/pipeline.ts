@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/api/src/rag/pipeline.ts
 // Thin private RAG helper that composes the local embeddings + reranker.
 // No routes here — import from service code where you run search/RAG.

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/RouterGate.tsx
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 

@@ -7,15 +7,41 @@ import globals from 'globals';
 export default [
   // Main configuration for TypeScript/React files
   {
+<<<<<<< HEAD
     files: [
       'src/**/*.{ts,tsx}',
       'packages/**/*.{ts,tsx}'
+=======
+    // Ignore files outside of packages and src directories
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+      '**/build/**',
+      '**/out/**',
+      'imports/**',
+      '_ops/**',
+      'proxy/**',
+      'eslint.config.js',
+      'tailwind.config.cjs',
+      'postcss.config.cjs',
+      'index.html',
+      '**/vite.config.ts',
+      '**/vite.config.js',
+      '**/legacy/**',
+      '**/functions/**',
+>>>>>>> 4f266197cacbf600be251d50d18e29c95aea3055
     ],
+  },
+  {
+    // TypeScript files in packages and src
+    files: ['packages/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
+<<<<<<< HEAD
         project: './tsconfig.json',
         tsconfigRootDir: import.meta.dirname,
         ecmaFeatures: {
@@ -28,6 +54,9 @@ export default [
         ...globals.node,
         React: 'readonly',
         JSX: 'readonly'
+=======
+        project: ['./tsconfig.json', './packages/*/tsconfig.json'],
+>>>>>>> 4f266197cacbf600be251d50d18e29c95aea3055
       },
     },
     plugins: {
@@ -36,6 +65,7 @@ export default [
       'react': reactPlugin,
     },
     rules: {
+<<<<<<< HEAD
       // TypeScript rules
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
@@ -59,6 +89,34 @@ export default [
       // React Hooks rules
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+=======
+      ...tseslint.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          'argsIgnorePattern': '^_',
+          'varsIgnorePattern': '^_',
+        }
+      ],
+    },
+  },
+  {
+    // JavaScript files - no type checking
+    files: ['**/*.{js,jsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
+    rules: {
+      ...tseslint.configs.recommended.rules,
+      '@typescript-eslint/no-var-requires': 'off',
+>>>>>>> 4f266197cacbf600be251d50d18e29c95aea3055
     },
   },
 

@@ -1,6 +1,8 @@
 // RESOLVED CONFLICT: Merged features from both branches without dropping any functionality.
 
 // ---- Shared Types ----
+export type ContextItem = Record<string, unknown>;
+
 export interface ReasoningStep {
   // From feat/v0-import
   type?: "premise" | "inference" | "deduction" | "induction" | "abduction";
@@ -138,10 +140,11 @@ export class AdvancedReasoningEngine {
   }
 
   // ---- Advanced Reasoning (feat/v0-import) ----
-  async performAdvancedReasoning(query: string, contextArr: any[]): Promise<ReasoningChain> {
+  async performAdvancedReasoning(query: string, contextArr: ContextItem[]): Promise<ReasoningChain> {
     const reasoningId = `reasoning_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const complexity = this.analyzeQueryComplexity(query);
-    const approach = this.selectReasoningApproach(complexity, contextArr);
+    // complexity and approach are computed but not used in this implementation
+    // const complexity = this.analyzeQueryComplexity(query);
+    // const approach = this.selectReasoningApproach(complexity, contextArr);
     const steps: ReasoningStep[] = [];
     // Deductive reasoning
     const deductiveSteps = await this.performDeductiveReasoning(query, contextArr);
@@ -171,7 +174,7 @@ export class AdvancedReasoningEngine {
     return reasoningChain;
   }
 
-  async learnFromExperience(experience: any, outcome: "success" | "failure", feedback?: string): Promise<void> {
+  async learnFromExperience(experience: ContextItem, outcome: "success" | "failure", feedback?: string): Promise<void> {
     const patternId = this.extractPatternId(experience);
     let pattern = this.learningPatterns.get(patternId);
     if (!pattern) {
@@ -219,7 +222,7 @@ export class AdvancedReasoningEngine {
     };
   }
 
-  private evolveKnowledgeGraph(experience: any, outcome: "success" | "failure"): void {
+  private evolveKnowledgeGraph(experience: ContextItem, outcome: "success" | "failure"): void {
     const concepts = this.extractConcepts(experience);
     concepts.forEach((concept) => {
       if (!this.knowledgeGraph.has(concept)) {
@@ -254,24 +257,24 @@ export class AdvancedReasoningEngine {
     );
   }
 
-  private selectReasoningApproach(complexity: number, context: any[]): string {
+  private selectReasoningApproach(complexity: number, _context: ContextItem[]): string {
     if (complexity > 0.8) return "comprehensive";
     if (complexity > 0.5) return "analytical";
     return "direct";
   }
 
-  private async performDeductiveReasoning(query: string, context: any[]): Promise<ReasoningStep[]> {
+  private async performDeductiveReasoning(query: string, context: ContextItem[]): Promise<ReasoningStep[]> {
     return [
       {
         type: "deduction",
         content: `Deductive analysis of: ${query}`,
-        evidence: context.map((c) => c.toString()),
+        evidence: context.map((c) => JSON.stringify(c)),
         confidence: 0.85,
       },
     ];
   }
 
-  private async performInductiveReasoning(query: string, context: any[]): Promise<ReasoningStep[]> {
+  private async performInductiveReasoning(query: string, context: ContextItem[]): Promise<ReasoningStep[]> {
     return [
       {
         type: "induction",
@@ -282,7 +285,7 @@ export class AdvancedReasoningEngine {
     ];
   }
 
-  private async performAbductiveReasoning(query: string, context: any[]): Promise<ReasoningStep[]> {
+  private async performAbductiveReasoning(query: string, _context: ContextItem[]): Promise<ReasoningStep[]> {
     return [
       {
         type: "abduction",
@@ -310,13 +313,13 @@ export class AdvancedReasoningEngine {
     }
   }
 
-  private extractPatternId(experience: any): string {
+  private extractPatternId(experience: ContextItem): string {
     return `pattern_${JSON.stringify(experience)
       .slice(0, 50)
       .replace(/[^a-zA-Z0-9]/g, "_")}`;
   }
 
-  private extractContextualInfo(experience: any): string[] {
+  private extractContextualInfo(experience: ContextItem): string[] {
     return Object.keys(experience).filter((key) => typeof experience[key] === "string");
   }
 
@@ -344,20 +347,20 @@ export class AdvancedReasoningEngine {
     return steps.every((step) => (step.confidence ?? 0) > 0.3);
   }
 
-  private evaluateEvidenceStrength(steps: ReasoningStep[]): number {
-    return steps.reduce((sum, step) => sum + (step.evidence?.length ?? 0), 0) / steps.length;
+  private evaluateEvidenceStrength(_steps: ReasoningStep[]): number {
+    return _steps.reduce((sum, step) => sum + (step.evidence?.length ?? 0), 0) / _steps.length;
   }
 
-  private identifyPotentialBiases(steps: ReasoningStep[]): string[] {
+  private identifyPotentialBiases(_steps: ReasoningStep[]): string[] {
     // Identify potential cognitive biases in reasoning
     return ["confirmation_bias", "availability_heuristic"].filter(() => Math.random() > 0.7);
   }
 
-  private generateImprovementSuggestions(steps: ReasoningStep[]): string[] {
+  private generateImprovementSuggestions(_steps: ReasoningStep[]): string[] {
     return ["Consider alternative perspectives", "Gather more evidence", "Question assumptions"];
   }
 
-  private extractConcepts(experience: any): string[] {
+  private extractConcepts(experience: ContextItem): string[] {
     return Object.keys(experience).filter((key) => typeof experience[key] === "string");
   }
 
@@ -384,7 +387,7 @@ export class AdvancedReasoningEngine {
     });
   }
 
-  private identifyLearningOpportunities(chain: ReasoningChain): any[] {
+  private identifyLearningOpportunities(chain: ReasoningChain): ContextItem[] {
     return chain.steps.map((step) => ({
       type: step.type,
       content: step.content,

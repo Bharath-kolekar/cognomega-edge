@@ -5,7 +5,7 @@ export interface MemoryEntry {
   id: string;
   timestamp: number;
   type: "interaction" | "preference" | "success" | "failure" | "context" | "project" | "session" | "learning";
-  content: any;
+  content: Record<string, unknown>;
   importance: number;
   tags: string[];
   relatedEntries: string[];
@@ -230,7 +230,7 @@ export class ContextualMemory {
   // --- Methods from feat/v0-import (selected for demonstration) ---
   public addMemory(
     type: MemoryEntry["type"],
-    content: any,
+    content: Record<string, unknown>,
     importance = 0.5,
     tags: string[] = [],
     projectId?: string,
@@ -310,7 +310,7 @@ export class ContextualMemory {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  private calculateConfidenceLevel(content: any, tags: string[]): number {
+  private calculateConfidenceLevel(content: Record<string, unknown>, tags: string[]): number {
     let confidence = 0.5;
     confidence += Math.min(tags.length * 0.1, 0.3);
     if (typeof content === "object" && content !== null) {
