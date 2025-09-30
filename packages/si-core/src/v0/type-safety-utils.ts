@@ -124,7 +124,7 @@ export class FormValidator {
   }
 
   static rules = {
-    required: (message = "This field is required"): ValidationRule<any> => ({
+    required: (message = "This field is required"): ValidationRule<unknown> => ({
       validate: (value) => value !== null && value !== undefined && value !== "",
       message,
     }),

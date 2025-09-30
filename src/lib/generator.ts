@@ -1,6 +1,5 @@
 
 import { z } from "zod";
-import { useAppStore } from "./store";
 import prettier from "prettier/standalone";
 import parserTs from "prettier/plugins/typescript";
 import parserBabel from "prettier/plugins/babel";
