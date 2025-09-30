@@ -17,6 +17,17 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
+export { CausalReasoningAgent } from './causal-reasoning-agent';
+
+// Export causal reasoning interfaces
+export type {
+  CausalNode,
+  CausalEdge,
+  CausalGraph,
+  Intervention,
+  InterventionResult,
+  InterventionSimulator,
+} from './causal-reasoning-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';

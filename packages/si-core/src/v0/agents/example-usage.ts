@@ -148,5 +148,180 @@ export async function useIndividualAgents() {
   return planningResult;
 }
 
+/**
+ * Example: Use CausalReasoningAgent for marketing optimization
+ */
+export async function optimizeMarketingCampaign() {
+  const assistant = createFullStackAssistant();
+  await assistant.initialize();
+
+  console.log('\n=== Causal Reasoning Example: Marketing Optimization ===\n');
+
+  // Step 1: Build a causal model
+  console.log('Step 1: Building causal model for marketing domain...');
+  const buildModelTask: AgentTask = {
+    id: 'causal-build-1',
+    type: 'planning', // CausalReasoningAgent uses 'planning' type
+    payload: {
+      action: 'build-model',
+      payload: {
+        graphId: 'marketing-model',
+        domain: 'marketing',
+      },
+    },
+    priority: 9,
+    createdAt: Date.now(),
+  };
+
+  const modelResult = await assistant.execute(buildModelTask);
+  if (modelResult.success) {
+    console.log('✓ Causal model built successfully');
+    console.log('  Insights:', (modelResult.data as any)?.insights);
+  }
+
+  // Step 2: Predict intervention effects
+  console.log('\nStep 2: Predicting effect of increasing ad spend...');
+  const predictTask: AgentTask = {
+    id: 'causal-predict-1',
+    type: 'planning',
+    payload: {
+      action: 'predict-intervention',
+      payload: {
+        graphId: 'marketing-model',
+        intervention: {
+          targetNode: 'ad_spend',
+          value: 1000,
+          type: 'do',
+          description: 'Increase ad spend by $1000',
+        },
+      },
+    },
+    priority: 9,
+    createdAt: Date.now(),
+  };
+
+  const predictResult = await assistant.execute(predictTask);
+  if (predictResult.success) {
+    const result = predictResult.data as any;
+    console.log('✓ Intervention predicted');
+    console.log(`  Expected outcome: ${result.expectedOutcome?.toFixed(2)}`);
+    console.log(`  Confidence: ${(result.confidence * 100)?.toFixed(1)}%`);
+    console.log(`  Affects ${result.affectedNodes?.size || 0} nodes`);
+  }
+
+  // Step 3: Select optimal intervention
+  console.log('\nStep 3: Comparing multiple interventions...');
+  const selectTask: AgentTask = {
+    id: 'causal-select-1',
+    type: 'planning',
+    payload: {
+      action: 'select-optimal',
+      payload: {
+        graphId: 'marketing-model',
+        targetNode: 'revenue',
+        interventions: [
+          {
+            targetNode: 'ad_spend',
+            value: 500,
+            type: 'do',
+            description: 'Moderate ad spend increase',
+          },
+          {
+            targetNode: 'ad_spend',
+            value: 1500,
+            type: 'do',
+            description: 'High ad spend increase',
+          },
+          {
+            targetNode: 'impressions',
+            value: 10000,
+            type: 'do',
+            description: 'Direct impression boost',
+          },
+        ],
+      },
+    },
+    priority: 9,
+    createdAt: Date.now(),
+  };
+
+  const selectResult = await assistant.execute(selectTask);
+  if (selectResult.success) {
+    const result = selectResult.data as any;
+    console.log('✓ Optimal intervention selected');
+    console.log('\nReasoning:');
+    console.log(result.reasoning);
+  }
+
+  return selectResult;
+}
+
+/**
+ * Example: Use CausalReasoningAgent for healthcare decision support
+ */
+export async function analyzeHealthcareTreatment() {
+  const assistant = createFullStackAssistant();
+  await assistant.initialize();
+
+  console.log('\n=== Causal Reasoning Example: Healthcare Treatment ===\n');
+
+  // Build healthcare causal model
+  const buildTask: AgentTask = {
+    id: 'causal-healthcare-1',
+    type: 'planning',
+    payload: {
+      action: 'build-model',
+      payload: {
+        graphId: 'healthcare-model',
+        domain: 'healthcare',
+      },
+    },
+    priority: 9,
+    createdAt: Date.now(),
+  };
+
+  const buildResult = await assistant.execute(buildTask);
+  if (buildResult.success) {
+    console.log('✓ Healthcare causal model built');
+    console.log('  Model insights:', (buildResult.data as any)?.insights);
+  }
+
+  // Analyze counterfactual: What if we had used a different dosage?
+  const counterfactualTask: AgentTask = {
+    id: 'causal-counterfactual-1',
+    type: 'planning',
+    payload: {
+      action: 'counterfactual',
+      payload: {
+        graphId: 'healthcare-model',
+        intervention: {
+          targetNode: 'dosage',
+          value: 200,
+          type: 'counterfactual',
+          description: 'Alternative dosage level',
+        },
+        observedData: {
+          recovery: 0.7,
+          side_effects: 0.3,
+        },
+      },
+    },
+    priority: 9,
+    createdAt: Date.now(),
+  };
+
+  const counterfactualResult = await assistant.execute(counterfactualTask);
+  if (counterfactualResult.success) {
+    console.log('\n✓ Counterfactual analysis complete');
+    const result = counterfactualResult.data as any;
+    console.log(`  Expected outcome: ${result.expectedOutcome?.toFixed(2)}`);
+    if (result.warnings) {
+      console.log('  Warnings:', result.warnings);
+    }
+  }
+
+  return counterfactualResult;
+}
+
 // Export for testing
 export { createFullStackAssistant };
