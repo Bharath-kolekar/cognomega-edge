@@ -443,6 +443,21 @@ Select-String -Path $log -Pattern '^\[FAIL\]' | ForEach-Object { $_.Line }
 * [tasks.md](./tasks.md) — Decisions, tasks, statuses, owners (single source of tasks).
 * [roadmap.md](./roadmap.md) — Milestones, scope, when/what and acceptance.
 
+## 📖 Source of Truth Documentation
+
+Comprehensive documentation suite for developers and contributors:
+
+* **[docs/SOT/README.md](./docs/SOT/README.md)** — SOT documentation index
+* **[docs/SOT/00-RULES.md](./docs/SOT/00-RULES.md)** — Non-negotiable operating rules (binding authority)
+* **[docs/SOT/monorepo-structure.md](./docs/SOT/monorepo-structure.md)** — Directory layout, packages, organization
+* **[docs/SOT/microservices.md](./docs/SOT/microservices.md)** — AI engines, agents, services architecture
+* **[docs/SOT/builder.md](./docs/SOT/builder.md)** — UI builder service, architecture, deployment
+* **[docs/SOT/development-workflow.md](./docs/SOT/development-workflow.md)** — Setup, contribution, adding packages
+* **[docs/SOT/ci-cd.md](./docs/SOT/ci-cd.md)** — Build, test, deployment pipelines
+* **[docs/SOT/best-practices.md](./docs/SOT/best-practices.md)** — Coding standards, testing, security
+* **[docs/SOT/contribution-guide.md](./docs/SOT/contribution-guide.md)** — How to contribute, PR process
+* **[docs/SOT/migration-history.md](./docs/SOT/migration-history.md)** — Major changes, refactoring, migrations
+
 ---
 
 ## 🆘 Support
