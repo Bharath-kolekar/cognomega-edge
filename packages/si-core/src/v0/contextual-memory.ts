@@ -72,7 +72,7 @@ export interface SessionContext {
   satisfaction: number;
 }
 
-export interface LearningPattern {
+export interface UserLearningPattern {
   concept: string;
   masteryLevel: number;
   learningVelocity: number;
@@ -115,7 +115,7 @@ export class ContextualMemory {
   private projectContexts: Map<string, ProjectContext>;
   private sessionHistory: Map<string, SessionContext>;
   private currentSessionId: string;
-  private learningPatterns: Map<string, LearningPattern>;
+  private learningPatterns: Map<string, UserLearningPattern>;
   private memoryGraph: Map<string, Set<string>>;
   private semanticIndex: Map<string, Array<{ entryId: string; relevance: number }>>;
   private crossSessionPatterns: Map<string, Array<{ pattern: string; frequency: number; lastSeen: number }>>;
