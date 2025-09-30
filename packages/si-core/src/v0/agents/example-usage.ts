@@ -148,5 +148,179 @@ export async function useIndividualAgents() {
   return planningResult;
 }
 
+/**
+ * Example: Use the SelfImprovingAgent for meta-cognition and self-improvement
+ */
+export async function useSelfImprovingAgent() {
+  // Import the SelfImprovingAgent
+  const { SelfImprovingAgent } = await import('./self-improving-agent');
+  
+  // Create and initialize the agent
+  const selfImprovingAgent = new SelfImprovingAgent();
+  await selfImprovingAgent.initialize();
+  
+  console.log('SelfImprovingAgent initialized');
+  console.log('Capabilities:', selfImprovingAgent.config.capabilities);
+  
+  // Example 1: Analyze current performance
+  const analysisTask: AgentTask = {
+    id: 'analysis-1',
+    type: 'self-improving',
+    payload: { action: 'analyze' },
+    priority: 8,
+    createdAt: Date.now(),
+  };
+  
+  const analysisResult = await selfImprovingAgent.execute(analysisTask);
+  console.log('\nPerformance Analysis:', analysisResult.data);
+  
+  // Example 2: Generate improvement plans
+  const improvementTask: AgentTask = {
+    id: 'improve-1',
+    type: 'self-improving',
+    payload: { action: 'improve' },
+    priority: 8,
+    createdAt: Date.now(),
+  };
+  
+  const improvementResult = await selfImprovingAgent.execute(improvementTask);
+  console.log('\nImprovement Plans:', improvementResult.data);
+  
+  // Example 3: Perform meta-cognition (introspection)
+  const introspectionTask: AgentTask = {
+    id: 'introspect-1',
+    type: 'self-improving',
+    payload: { action: 'introspect' },
+    priority: 8,
+    createdAt: Date.now(),
+  };
+  
+  const introspectionResult = await selfImprovingAgent.execute(introspectionTask);
+  console.log('\nMeta-Cognitive Analysis:', introspectionResult.data);
+  
+  // Access metrics directly
+  const metrics = selfImprovingAgent.getMetrics();
+  console.log('\nCurrent Metrics:', {
+    successRate: `${(metrics.successRate * 100).toFixed(1)}%`,
+    totalTasks: metrics.totalTasksProcessed,
+    performanceTrend: metrics.performanceTrend,
+  });
+  
+  // Get improvement plans
+  const plans = selfImprovingAgent.getImprovementPlans();
+  console.log(`\nTotal Improvement Plans: ${plans.length}`);
+  
+  return {
+    analysisResult,
+    improvementResult,
+    introspectionResult,
+    metrics,
+    plans,
+  };
+}
+
+/**
+ * Example: Use SelfImprovingAgent with custom modules
+ */
+export async function useSelfImprovingAgentWithModules() {
+  const { SelfImprovingAgent } = await import('./self-improving-agent');
+  
+  // Import types separately
+  type IMetaCognitionModule = import('./self-improving-agent').IMetaCognitionModule;
+  type IVectorDatabase = import('./self-improving-agent').IVectorDatabase;
+  type ISelfModificationEngine = import('./self-improving-agent').ISelfModificationEngine;
+  
+  // Example stub implementations (in production, these would be real integrations)
+  
+  // Stub meta-cognition module
+  const metaCognitionModule: IMetaCognitionModule = {
+    analyzeReasoning: async (_task, _result) => ({
+      qualityScore: 0.85,
+      strengths: ['Clear logic', 'Efficient processing'],
+      weaknesses: ['Could improve error handling'],
+      suggestions: ['Add validation layer', 'Implement retry logic'],
+    }),
+    evaluateDecision: async (_decision, _outcome) => 0.88,
+    identifyBiases: async (_history) => ['Confirmation bias', 'Availability heuristic'],
+  };
+  
+  // Stub vector database
+  const vectorDatabase: IVectorDatabase = {
+    store: async (key, _vector, metadata) => {
+      console.log(`Storing in vector DB: ${key}`, metadata);
+    },
+    retrieve: async (_vector, topK) => {
+      return Array.from({ length: Math.min(topK, 3) }, (_, i) => ({
+        key: `pattern-${i}`,
+        similarity: 0.9 - i * 0.1,
+        metadata: { type: 'learning_pattern', timestamp: Date.now() },
+      }));
+    },
+    update: async (key, metadata) => {
+      console.log(`Updating vector DB: ${key}`, metadata);
+    },
+  };
+  
+  // Stub self-modification engine
+  const selfModificationEngine: ISelfModificationEngine = {
+    proposeModifications: async (metrics) => {
+      if (metrics.successRate < 0.9) {
+        return [{
+          id: `mod-${Date.now()}`,
+          name: 'Enhance Error Handling',
+          description: 'Improve error handling and recovery',
+          priority: 'high' as const,
+          targetMetrics: ['successRate'],
+          expectedImpact: 0.12,
+          steps: [
+            {
+              name: 'Add try-catch blocks',
+              description: 'Wrap critical sections in error handlers',
+              action: 'refactor' as const,
+              completed: false,
+            },
+          ],
+          status: 'proposed' as const,
+          created: Date.now(),
+        }];
+      }
+      return [];
+    },
+    applyModification: async (plan) => ({
+      success: true,
+      modificationId: `applied-${plan.id}`,
+      changes: [`Applied ${plan.steps.length} improvements`],
+    }),
+    rollback: async (modificationId) => {
+      console.log(`Rolling back modification: ${modificationId}`);
+    },
+  };
+  
+  // Create agent with custom modules
+  const agent = new SelfImprovingAgent(
+    metaCognitionModule,
+    vectorDatabase,
+    selfModificationEngine
+  );
+  
+  await agent.initialize();
+  
+  console.log('SelfImprovingAgent with custom modules initialized');
+  
+  // Use the agent with enhanced capabilities
+  const task: AgentTask = {
+    id: 'enhanced-analysis-1',
+    type: 'self-improving',
+    payload: { action: 'improve' },
+    priority: 9,
+    createdAt: Date.now(),
+  };
+  
+  const result = await agent.execute(task);
+  console.log('Enhanced improvement result:', result.data);
+  
+  return result;
+}
+
 // Export for testing
 export { createFullStackAssistant };
