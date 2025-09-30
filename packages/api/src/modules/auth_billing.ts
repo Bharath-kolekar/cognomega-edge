@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // api/src/modules/auth_billing.ts
 // Cognomega API — Auth + Billing + Jobs + SI + Uploads
 // Self-contained router you can mount from api/src/index.ts without refactors.

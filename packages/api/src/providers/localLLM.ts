@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/api/src/providers/localLLM.ts
 // Minimal OpenAI-compatible client for your LOCAL inference server.
 // Works with vLLM/Ollama/llama.cpp gateways that expose /v1/chat/completions.

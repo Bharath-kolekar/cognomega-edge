@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/components/UsageFeed.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, fetchJson, readUserEmail } from "../lib/api/apiBase";

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/App.tsx
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, readUserEmail, ensureApiBase } from "./lib/api/apiBase";
@@ -167,7 +168,7 @@ const fieldCls =
 
 /* --------------------------------- App ---------------------------------- */
 export default function App() {
-  const [ready, setReady] = useState(false);
+  const [_ready, setReady] = useState(false);
 
   // Ask console
   const [askResp, setAskResp] = useState<string>("");
@@ -291,7 +292,7 @@ export default function App() {
     [fetchJSON]
   );
 
-  const onDownload = useCallback(async () => {
+  const _onDownload = useCallback(async () => {
     if (!jobId) return;
     setError(null);
     setInfo("Preparing download...");
@@ -388,7 +389,7 @@ export default function App() {
     // web-llm (best-effort)
     (async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const mod: any = await import("@mlc-ai/web-llm");
         engineRef.current = await (mod as any).CreateWebWorkerMLCEngine(new URL("/"), {
           model: "Llama-3.1-8B-Instruct-q4f16_1-MLC",

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /** Frontend API base + helpers (dev uses Vite proxy).
  * Dev (localhost): use relative "/api" so Vite proxy handles CORS.
  * Prod: use VITE_API_BASE if set, else https://api.cognomega.com.

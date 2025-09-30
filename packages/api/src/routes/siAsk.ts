@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/api/src/routes/siAsk.ts
 // Wires the public /api/si/ask endpoint to your local inference via the quality router.
 

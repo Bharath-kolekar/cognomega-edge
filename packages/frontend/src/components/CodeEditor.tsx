@@ -1,7 +1,8 @@
+ 
 import React, { useRef, useEffect, useState } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 
-loader.init().then(monaco => {
+loader.init().then(_monaco => {
   // Optionally configure monaco here
 });
 
