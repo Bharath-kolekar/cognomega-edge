@@ -17,6 +17,23 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
+export { AutonomousGoalAgent } from './autonomous-goal-agent';
+
+// Export GoalTree and GoalProgressMonitor interfaces
+export type {
+  GoalNode,
+  GoalTree,
+  GoalProgressMonitor,
+  ProgressMetrics,
+  RiskFactor,
+  Alert,
+  ExecutionPlan,
+  ExecutionPhase,
+  ResourceRequirement,
+  Timeline,
+  Milestone,
+  ContingencyPlan,
+} from './autonomous-goal-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
