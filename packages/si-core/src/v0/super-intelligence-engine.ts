@@ -1,4 +1,4 @@
-import { AdvancedReasoningEngine, ReasoningStep, EvolvingGoal } from './advanced-reasoning-engine';
+import { AdvancedReasoningEngine, ReasoningStep } from './advanced-reasoning-engine';
 import { ContextualMemory, ContextSession } from './contextual-memory';
 import { analyzeSemantics, SemanticAnalysis } from './semantic-nlp-engine';
 import { TaskPayload, RoutingResult, routeToEngine, registerEngine, getRegisteredEngines, EngineType } from './smart-ai-router';
@@ -38,7 +38,9 @@ export class SuperIntelligenceEngine {
   }
 
   process(request: SuperIntelligenceRequest): SuperIntelligenceResponse {
+
     this.memory.set('last', request.text, request.user, undefined, undefined, undefined);
+
 
     const semantics = analyzeSemantics(request.text);
     if (semantics.intent !== 'unknown') {
