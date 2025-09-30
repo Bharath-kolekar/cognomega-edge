@@ -38,7 +38,7 @@ export class SuperIntelligenceEngine {
   }
 
   process(request: SuperIntelligenceRequest): SuperIntelligenceResponse {
-    this.memory.set('last', request.text, request.user, undefined, undefined, undefined, "initialized");
+    this.memory.set('last', request.text, request.user, undefined, undefined, undefined);
 
     const semantics = analyzeSemantics(request.text);
     if (semantics.intent !== 'unknown') {
