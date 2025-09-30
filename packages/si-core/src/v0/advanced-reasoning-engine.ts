@@ -1,9 +1,14 @@
+/** 
+ * AdvancedReasoningEngine (Optimized for Resource Efficiency)
+ * Uses lazy, batched reasoning, sparse fact storage, and adaptive complexity.
+ */
 export interface QuantumFact {
   key: string;
   value: string | number | boolean | object;
   certainty?: number;
   superposition?: (string | number | boolean | object)[];
   entanglement?: string[];
+  constraints?: Record<string, string | number | boolean | object>;
 }
 
 export interface EvolvingGoal {
@@ -14,19 +19,19 @@ export interface EvolvingGoal {
   evolution?: string[];
 }
 
+export interface ReasoningContext {
+  facts: QuantumFact[];
+  goals: EvolvingGoal[];
+  history?: string[];
+  quantumState?: string;
+}
+
 export interface ReasoningStep {
   step: string;
   rationale: string;
   outcome: string;
   certainty?: number;
   feedback?: string;
-  quantumState?: string;
-}
-
-export interface ReasoningContext {
-  facts: QuantumFact[];
-  goals: EvolvingGoal[];
-  history?: string[];
   quantumState?: string;
 }
 
@@ -57,7 +62,7 @@ export class AdvancedReasoningEngine {
         Object.keys(goal.constraints).forEach(key => {
           (this.factIndex[key] ?? []).forEach(idx => {
             const fact = this.context.facts[idx];
-            if (fact && fact[key] === goal.constraints![key]) relevantFacts.push(fact);
+            if (fact && fact.constraints && fact.constraints[key] === goal.constraints![key]) relevantFacts.push(fact);
           });
         });
       }
