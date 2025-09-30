@@ -5,14 +5,8 @@ import reactPlugin from 'eslint-plugin-react';
 import globals from 'globals';
 
 export default [
-  // Main configuration for TypeScript/React files
+  // Global ignores
   {
-<<<<<<< HEAD
-    files: [
-      'src/**/*.{ts,tsx}',
-      'packages/**/*.{ts,tsx}'
-=======
-    // Ignore files outside of packages and src directories
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
@@ -30,20 +24,25 @@ export default [
       '**/vite.config.js',
       '**/legacy/**',
       '**/functions/**',
->>>>>>> 4f266197cacbf600be251d50d18e29c95aea3055
-    ],
+      'packages/si-core/dist/**',
+      'imports/v0-20250927-003305/**',
+      '_ops/snapshot/**',
+      'packages/frontend/legacy/**',
+      '**/*.d.ts',
+      '**/*.min.js',
+      '**/*.min.css',
+    ]
   },
+  
+  // TypeScript files in packages and src
   {
-    // TypeScript files in packages and src
     files: ['packages/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
-<<<<<<< HEAD
-        project: './tsconfig.json',
-        tsconfigRootDir: import.meta.dirname,
+        project: ['./tsconfig.json', './packages/*/tsconfig.json'],
         ecmaFeatures: {
           jsx: true
         }
@@ -54,9 +53,6 @@ export default [
         ...globals.node,
         React: 'readonly',
         JSX: 'readonly'
-=======
-        project: ['./tsconfig.json', './packages/*/tsconfig.json'],
->>>>>>> 4f266197cacbf600be251d50d18e29c95aea3055
       },
     },
     plugins: {
@@ -65,8 +61,7 @@ export default [
       'react': reactPlugin,
     },
     rules: {
-<<<<<<< HEAD
-      // TypeScript rules
+      ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -89,38 +84,10 @@ export default [
       // React Hooks rules
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
-=======
-      ...tseslint.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          'argsIgnorePattern': '^_',
-          'varsIgnorePattern': '^_',
-        }
-      ],
-    },
-  },
-  {
-    // JavaScript files - no type checking
-    files: ['**/*.{js,jsx}'],
-    languageOptions: {
-      parser: tsParser,
-      parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-      },
-    },
-    plugins: {
-      '@typescript-eslint': tseslint,
-    },
-    rules: {
-      ...tseslint.configs.recommended.rules,
-      '@typescript-eslint/no-var-requires': 'off',
->>>>>>> 4f266197cacbf600be251d50d18e29c95aea3055
     },
   },
 
-  // Configuration for JavaScript files
+  // JavaScript files
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
@@ -147,26 +114,5 @@ export default [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
     },
-  },
-
-  // Global ignores for problematic directories
-  {
-    ignores: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/build/**',
-      '**/.next/**',
-      '**/out/**',
-      'packages/si-core/dist/**',
-      'imports/v0-20250927-003305/**',
-      '_ops/snapshot/**',
-      'proxy/**',
-      'packages/frontend/legacy/**',
-      '**/*.d.ts',
-      '**/*.min.js',
-      '**/*.min.css',
-      '**/*.config.js',
-      '**/*.config.ts',
-    ]
   },
 ];

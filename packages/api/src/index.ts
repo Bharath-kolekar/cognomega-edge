@@ -264,7 +264,7 @@ app.get("/.well-known/jwks.json", async (c) => {
 registerAuthBillingRoutes(app);
 
 // -------- Helpers --------
-const sqlFor = (c: Context<{ Bindings: Env }>) => {
+const sqlFor = (c: Context<{ Bindings: Env; Variables: CtxVars }>) => {
   const dsn = c.env.DATABASE_URL || c.env.NEON_DATABASE_URL;
   if (!dsn) throw new HTTPException(500, { message: "DATABASE_URL not set" });
   return neon(dsn);
@@ -345,7 +345,7 @@ function defaultModel(provider: string) {
 }
 
 async function runProvider(
-  c: Context<{ Bindings: Env }>,
+  c: Context<{ Bindings: Env; Variables: CtxVars }>,
   provider: "groq" | "openai" | "workers_ai",
   model: string,
   p: { prompt: string; system: string | null; max_tokens: number; temperature: number }
@@ -375,7 +375,7 @@ async function runProvider(
     });
 
     // Read JSON once, then throw a typed HTTPException if not ok
-    const j: { choices?: Array<{ message?: { content?: string } }> } = await r.json().catch(() => ({}));
+    const j = await r.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: string } }> };
     if (!r.ok) {
       const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
       throw new HTTPException(502, { message: `groq_error:${r.status} ${detail}` });
@@ -407,7 +407,7 @@ async function runProvider(
       body: JSON.stringify(body),
     });
 
-    const j: { choices?: Array<{ message?: { content?: string } }> } = await r.json().catch(() => ({}));
+    const j = await r.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: string } }> };
     if (!r.ok) {
       const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
       throw new HTTPException(502, { message: `openai_error:${r.status} ${detail}` });
@@ -424,17 +424,17 @@ async function runProvider(
     max_tokens,
     temperature,
   };
-  const out = await c.env.AI.run(model, input);
+  const out = await c.env.AI.run(model as any, input);
   const text: string =
-    out?.response?.toString() ??
-    out?.result?.response?.toString() ??
-    out?.choices?.[0]?.message?.content?.toString() ??
+    (out as any)?.response?.toString() ??
+    (out as any)?.result?.response?.toString() ??
+    (out as any)?.choices?.[0]?.message?.content?.toString() ??
     "";
   if (!text) throw new Error("workers_ai_empty_response");
   return text.trim();
 }
 
-async function completeWithProvider(c: Context<{ Bindings: Env }>, body: { prompt?: string; system?: string | null; max_tokens?: number; temperature?: number }) {
+async function completeWithProvider(c: Context<{ Bindings: Env; Variables: CtxVars }>, body: { prompt?: string; system?: string | null; max_tokens?: number; temperature?: number }) {
   const askedProvider =
     (c.req.header("x-llm-provider") as string | undefined) || c.env.LLM_PROVIDER || "groq";
   const askedModel =
@@ -461,7 +461,7 @@ async function completeWithProvider(c: Context<{ Bindings: Env }>, body: { promp
       const text = await runProvider(c, p, model, { prompt, system, max_tokens, temperature });
       return { text, provider: p, model };
     } catch (e) {
-      lastErr = e;
+      lastErr = e instanceof Error ? e : new Error(String(e));
       continue;
     }
   }
@@ -469,7 +469,7 @@ async function completeWithProvider(c: Context<{ Bindings: Env }>, body: { promp
 }
 
 // -------- DB helpers --------
-async function ensureSchema(_c: Context<{ Bindings: Env }>, sql: NeonQueryFunction<false, false>) {
+async function ensureSchema(_c: Context<{ Bindings: Env; Variables: CtxVars }>, sql: NeonQueryFunction<false, false>) {
   // Try extension; some platforms disallow CREATE EXTENSION.
   try {
     await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`;
@@ -513,7 +513,7 @@ async function ensureSchema(_c: Context<{ Bindings: Env }>, sql: NeonQueryFuncti
 }
 
 async function ensureUserByEmail(sql: NeonQueryFunction<false, false>, email: string): Promise<string> {
-  const r = await sql<{ id: string }>`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
+  const r = await sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
   if (r.length) return r[0].id;
 
   const newId = crypto.randomUUID();
@@ -522,7 +522,7 @@ async function ensureUserByEmail(sql: NeonQueryFunction<false, false>, email: st
 }
 
 async function getBalance(sql: NeonQueryFunction<false, false>, userId: string): Promise<number> {
-  const r = await sql<{ bal: string }>`
+  const r = await sql`
     SELECT COALESCE(SUM(amount_credits), 0)::text AS bal
     FROM credit_txn WHERE user_id = ${userId}
   `;

@@ -73,7 +73,7 @@ export async function localChatComplete(
     );
   }
 
-  const data = await r.json().catch(() => ({}));
+  const data: any = await r.json().catch(() => ({}));
   // Parse the common shapes returned by OpenAI-compatible servers
   let text = "";
   if (Array.isArray(data?.choices) && data.choices.length > 0) {
