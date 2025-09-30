@@ -145,7 +145,7 @@ describe('UserService', () => {
       const userData = {
         email: 'test@example.com',
         name: 'Test User',
-        password: 'password123',
+        password: process.env.TEST_USER_PASSWORD || 'changeme',
       }
       const user = await userService.createUser(userData)
       expect(user).toHaveProperty('id')
