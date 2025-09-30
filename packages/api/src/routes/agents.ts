@@ -10,6 +10,7 @@ import {
   getAgentSystemStatus,
   ProjectRequirements,
   AgentTask,
+  AgentStatus,
 } from '@cognomega/si-core';
 
 const app = new Hono();
@@ -140,7 +141,7 @@ app.get('/health', async (c) => {
     const statuses = assistant.getAgentStatuses();
     const healthData: any[] = [];
 
-    statuses.forEach((status, agentType) => {
+    statuses.forEach((status: AgentStatus, agentType: string) => {
       healthData.push({
         agent: agentType,
         health: status.health,
