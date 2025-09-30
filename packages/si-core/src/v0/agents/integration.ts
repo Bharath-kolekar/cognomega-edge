@@ -58,7 +58,7 @@ function convertTaskPayloadToAgentTask(
   agentType: string
 ): AgentTask {
   return {
-    id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     type: agentType as any,
     payload: task.payload,
     priority: task.priority || 5,
