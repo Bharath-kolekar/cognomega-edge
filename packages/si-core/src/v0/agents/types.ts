@@ -213,6 +213,7 @@ export type AgentType =
   | 'database'
   | 'devops'
   | 'testing'
+  | 'collaboration'
   | 'orchestrator';
 
 export interface AgentTask {
