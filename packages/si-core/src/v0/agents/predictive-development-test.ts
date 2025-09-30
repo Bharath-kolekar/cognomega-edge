@@ -63,8 +63,9 @@ async function testPredictiveDevelopmentAgent() {
     throw new Error(`Prediction failed: ${predictResult.error}`);
   }
   
-  console.log(`✅ Predicted ${(predictResult.data as any).totalPredictions} future requirements`);
-  console.log(`  - High probability predictions: ${(predictResult.data as any).highProbabilityCount}`);
+  const predictData = predictResult.data as { totalPredictions: number; highProbabilityCount: number };
+  console.log(`✅ Predicted ${predictData.totalPredictions} future requirements`);
+  console.log(`  - High probability predictions: ${predictData.highProbabilityCount}`);
   console.log(`  - Confidence: ${(predictResult.metadata?.confidence ?? 0) * 100}%`);
 
   // Test 5: Suggest Features
@@ -92,8 +93,9 @@ async function testPredictiveDevelopmentAgent() {
     throw new Error(`Feature suggestion failed: ${featureResult.error}`);
   }
   
-  console.log(`✅ Generated ${(featureResult.data as any).totalSuggestions} feature suggestions`);
-  console.log(`  - High priority: ${(featureResult.data as any).highPriority}`);
+  const featureData = featureResult.data as { totalSuggestions: number; highPriority: number };
+  console.log(`✅ Generated ${featureData.totalSuggestions} feature suggestions`);
+  console.log(`  - High priority: ${featureData.highPriority}`);
   console.log(`  - Confidence: ${(featureResult.metadata?.confidence ?? 0) * 100}%`);
 
   // Test 6: Recommend Refactoring
@@ -121,8 +123,9 @@ async function testPredictiveDevelopmentAgent() {
     throw new Error(`Refactoring recommendation failed: ${refactorResult.error}`);
   }
   
-  console.log(`✅ Generated ${(refactorResult.data as any).totalRecommendations} refactoring recommendations`);
-  console.log(`  - High priority: ${(refactorResult.data as any).highPriority}`);
+  const refactorData = refactorResult.data as { totalRecommendations: number; highPriority: number };
+  console.log(`✅ Generated ${refactorData.totalRecommendations} refactoring recommendations`);
+  console.log(`  - High priority: ${refactorData.highPriority}`);
   console.log(`  - Confidence: ${(refactorResult.metadata?.confidence ?? 0) * 100}%`);
 
   // Test 7: Analyze Market Trends
@@ -143,11 +146,15 @@ async function testPredictiveDevelopmentAgent() {
     throw new Error(`Market analysis failed: ${trendsResult.error}`);
   }
   
-  const analysis = trendsResult.data as any;
+  const trendsData = trendsResult.data as { 
+    trends?: unknown[]; 
+    emergingTechnologies?: unknown[]; 
+    userDemands?: unknown[] 
+  };
   console.log(`✅ Analyzed market trends`);
-  console.log(`  - Trends identified: ${analysis.trends?.length || 0}`);
-  console.log(`  - Emerging technologies: ${analysis.emergingTechnologies?.length || 0}`);
-  console.log(`  - User demands: ${analysis.userDemands?.length || 0}`);
+  console.log(`  - Trends identified: ${trendsData.trends?.length || 0}`);
+  console.log(`  - Emerging technologies: ${trendsData.emergingTechnologies?.length || 0}`);
+  console.log(`  - User demands: ${trendsData.userDemands?.length || 0}`);
 
   // Test 8: Comprehensive Analysis
   console.log('\n🎯 Test 8: Comprehensive Predictive Analysis');
@@ -170,8 +177,9 @@ async function testPredictiveDevelopmentAgent() {
     throw new Error(`Comprehensive analysis failed: ${comprehensiveResult.error}`);
   }
   
+  const comprehensiveData = comprehensiveResult.data as { summary: string };
   console.log(`✅ Comprehensive analysis completed`);
-  console.log(`  - Summary: ${(comprehensiveResult.data as any).summary}`);
+  console.log(`  - Summary: ${comprehensiveData.summary}`);
   console.log(`  - Confidence: ${(comprehensiveResult.metadata?.confidence ?? 0) * 100}%`);
   console.log(`  - Next steps: ${comprehensiveResult.nextSteps?.length || 0}`);
 
