@@ -13,6 +13,7 @@ import { BackendDevAgent } from './backend-dev-agent';
 import { DatabaseAgent } from './database-agent';
 import { DevOpsAgent } from './devops-agent';
 import { TestingAgent } from './testing-agent';
+import { CausalReasoningAgent } from './causal-reasoning-agent';
 import { IAgent, AgentTask, AgentResult } from './types';
 
 /**
@@ -37,6 +38,7 @@ export function registerMultiAgentSystem(engine: SuperIntelligenceEngine): void 
     new DatabaseAgent(),
     new DevOpsAgent(),
     new TestingAgent(),
+    new CausalReasoningAgent(),
   ];
 
   agents.forEach(agent => {
