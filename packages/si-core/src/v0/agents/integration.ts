@@ -13,6 +13,7 @@ import { BackendDevAgent } from './backend-dev-agent';
 import { DatabaseAgent } from './database-agent';
 import { DevOpsAgent } from './devops-agent';
 import { TestingAgent } from './testing-agent';
+import { EthicsAlignmentAgent } from './ethics-alignment-agent';
 import { IAgent, AgentTask, AgentResult } from './types';
 
 /**
@@ -37,6 +38,7 @@ export function registerMultiAgentSystem(engine: SuperIntelligenceEngine): void 
     new DatabaseAgent(),
     new DevOpsAgent(),
     new TestingAgent(),
+    new EthicsAlignmentAgent(),
   ];
 
   agents.forEach(agent => {
@@ -128,6 +130,7 @@ export function getAgentSystemStatus(): {
       'DatabaseAgent',
       'DevOpsAgent',
       'TestingAgent',
+      'EthicsAlignmentAgent',
     ],
     orchestrator: 'FullStackAIAssistant',
     specializedAgents: [
@@ -138,6 +141,7 @@ export function getAgentSystemStatus(): {
       'DatabaseAgent',
       'DevOpsAgent',
       'TestingAgent',
+      'EthicsAlignmentAgent',
     ],
   };
 }
