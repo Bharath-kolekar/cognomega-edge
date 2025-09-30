@@ -31,3 +31,28 @@ build/
 *.bin
 
 _worktrees/
+
+# CI/CD artifacts
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
+*.tsbuildinfo
+
+# Security and compliance reports
+licenses.json
+sbom.json
+*-report.md
+
+# Temporary files
+bundle-report.md
+cost-estimate.md
+policy-report.md
+license-report.md
+release-notes.md
+proofs.txt
+jwks.json
+jwks_headers.txt
+guest.json
+jwt_info.json
+si_headers.txt

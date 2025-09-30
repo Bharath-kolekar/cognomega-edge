@@ -1,0 +1,189 @@
+name: Full CI Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  # First stage: Quick checks
+  quick-checks:
+    name: Quick Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for merge conflicts
+        run: |
+          if grep -r "<<<<<<< HEAD" .; then
+            echo "::error::Merge conflict markers found"
+            exit 1
+          fi
+
+      - name: Check file sizes
+        run: |
+          large_files=$(find . -type f -size +5M -not -path "*/node_modules/*" -not -path "*/.git/*")
+          if [ -n "$large_files" ]; then
+            echo "::warning::Large files detected:"
+            echo "$large_files"
+          fi
+
+      - name: Check for secrets in code
+        run: |
+          # Simple pattern check for common secrets
+          if grep -r -i "api[_-]key\s*=\s*['\"]" --include="*.ts" --include="*.js" .; then
+            echo "::error::Potential hardcoded API key found"
+            exit 1
+          fi
+
+  # Second stage: Build and typecheck
+  build-check:
+    name: Build & Type Check
+    needs: quick-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript type checking
+        run: pnpm -r --if-present run check
+
+      - name: Build all packages
+        run: pnpm -r --if-present build
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/*/dist
+            packages/*/.wrangler
+          key: build-${{ github.sha }}
+
+  # Third stage: Parallel quality checks
+  lint:
+    name: Lint
+    needs: build-check
+    uses: ./.github/workflows/lint.yml
+
+  test:
+    name: Test
+    needs: build-check
+    uses: ./.github/workflows/test.yml
+
+  security:
+    name: Security
+    needs: quick-checks
+    uses: ./.github/workflows/security.yml
+
+  # Fourth stage: Integration checks
+  integration:
+    name: Integration Checks
+    needs: [build-check, lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/*/dist
+            packages/*/.wrangler
+          key: build-${{ github.sha }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate API contract
+        run: |
+          if [ -f "packages/api/wrangler.toml" ]; then
+            echo "Checking wrangler.toml..."
+            grep -q "api.cognomega.com" packages/api/wrangler.toml || {
+              echo "::error::API route pattern not found in wrangler.toml"
+              exit 1
+            }
+          fi
+
+      - name: Check for required environment variables
+        run: |
+          echo "Checking for required env var documentation..."
+          if [ -f "docs/OPS.md" ]; then
+            grep -q "CLOUDFLARE_API_TOKEN" docs/OPS.md || {
+              echo "::warning::CLOUDFLARE_API_TOKEN not documented in OPS.md"
+            }
+          fi
+
+  # Final stage: Report
+  ci-complete:
+    name: CI Complete
+    needs: [quick-checks, build-check, lint, test, security, integration]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+             [ "${{ needs.build-check.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ] || \
+             [ "${{ needs.integration.result }}" != "success" ]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
+          echo "✅ All CI checks passed!"
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = {
+              'Quick Checks': '${{ needs.quick-checks.result }}',
+              'Build & Type Check': '${{ needs.build-check.result }}',
+              'Lint': '${{ needs.lint.result }}',
+              'Test': '${{ needs.test.result }}',
+              'Security': '${{ needs.security.result }}',
+              'Integration': '${{ needs.integration.result }}'
+            };
+            
+            let body = '## 🚀 CI Pipeline Results\n\n';
+            for (const [check, result] of Object.entries(results)) {
+              const emoji = result === 'success' ? '✅' : '❌';
+              body += `${emoji} **${check}**: ${result}\n`;
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

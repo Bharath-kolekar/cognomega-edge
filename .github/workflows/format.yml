@@ -1,0 +1,63 @@
+name: Code Format
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  format-check:
+    name: Check Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Prettier formatting
+        id: format-check
+        run: |
+          # Check if prettier is configured
+          if [ -f "package.json" ] && grep -q "prettier" package.json; then
+            pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,yml,yaml}" || echo "format_failed=true" >> $GITHUB_OUTPUT
+          else
+            echo "No Prettier configuration found, skipping"
+          fi
+
+      - name: Run Prettier fix (on push to main)
+        if: steps.format-check.outputs.format_failed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          pnpm exec prettier --write "**/*.{ts,tsx,js,jsx,json,md,yml,yaml}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "style: auto-format code with Prettier [skip ci]"
+          git push
+
+      - name: Comment on PR with format instructions
+        if: steps.format-check.outputs.format_failed == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ Code formatting issues detected. Please run `pnpm exec prettier --write .` to fix formatting.'
+            })

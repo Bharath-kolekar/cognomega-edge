@@ -1,0 +1,26 @@
+# CODEOWNERS - Automatic PR review assignment
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @Bharath-kolekar
+
+# CI/CD workflows
+/.github/workflows/ @Bharath-kolekar
+
+# API and backend
+/packages/api/ @Bharath-kolekar
+
+# Frontend
+/packages/frontend/ @Bharath-kolekar
+
+# Documentation
+/docs/ @Bharath-kolekar
+*.md @Bharath-kolekar
+
+# Security and compliance
+/security/ @Bharath-kolekar
+/.github/dependabot.yml @Bharath-kolekar
+
+# Infrastructure and deployment
+/packages/api/wrangler.toml @Bharath-kolekar
+vercel.json @Bharath-kolekar

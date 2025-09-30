@@ -1,0 +1,173 @@
+name: Release & Changelog
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .github/cliff.toml
+          args: --verbose --unreleased --tag v${{ github.run_number }}
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --staged --quiet || git commit -m "docs: update CHANGELOG.md [skip ci]"
+          git push
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bump version
+        id: version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Bump version in root package.json
+          npm version ${{ github.event.inputs.release_type }} --no-git-tag-version
+          new_version=$(node -p "require('./package.json').version")
+          echo "version=$new_version" >> $GITHUB_OUTPUT
+          
+          # Commit version bump
+          git add package.json
+          git commit -m "chore: bump version to $new_version [skip ci]"
+          git tag "v$new_version"
+          git push
+          git push --tags
+
+      - name: Generate release notes
+        id: changelog
+        run: |
+          # Get commits since last tag
+          last_tag=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$last_tag" ]; then
+            commits=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            commits=$(git log $last_tag..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+          
+          # Categorize commits
+          echo "## What's Changed" > release-notes.md
+          echo "" >> release-notes.md
+          
+          # Features
+          features=$(echo "$commits" | grep -i "^- feat" || true)
+          if [ -n "$features" ]; then
+            echo "### 🚀 Features" >> release-notes.md
+            echo "$features" >> release-notes.md
+            echo "" >> release-notes.md
+          fi
+          
+          # Fixes
+          fixes=$(echo "$commits" | grep -i "^- fix" || true)
+          if [ -n "$fixes" ]; then
+            echo "### 🐛 Bug Fixes" >> release-notes.md
+            echo "$fixes" >> release-notes.md
+            echo "" >> release-notes.md
+          fi
+          
+          # Other changes
+          others=$(echo "$commits" | grep -v -i "^- feat\|^- fix" || true)
+          if [ -n "$others" ]; then
+            echo "### 🔧 Other Changes" >> release-notes.md
+            echo "$others" >> release-notes.md
+            echo "" >> release-notes.md
+          fi
+          
+          # Save for next step
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat release-notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          release_name: Release v${{ steps.version.outputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+
+  semantic-release:
+    name: Semantic Release (Auto)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, 'feat:') || contains(github.event.head_commit.message, 'fix:')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Install semantic-release
+        run: |
+          pnpm add -D semantic-release @semantic-release/git @semantic-release/changelog @semantic-release/github
+
+      - name: Run semantic release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

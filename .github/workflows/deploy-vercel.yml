@@ -1,0 +1,64 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/frontend/**"
+      - ".github/workflows/deploy-vercel.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy-production:
+    name: Deploy Frontend to Vercel (Production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: vars.ENABLE_VERCEL_DEPLOY == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: packages/frontend
+        run: pnpm run build
+
+      - name: Deploy to Vercel (Production)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: packages/frontend/dist
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-deployment:
+    name: Verify Vercel Deployment
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: vars.ENABLE_VERCEL_DEPLOY == 'true'
+    steps:
+      - name: Health check
+        run: |
+          if [ -n "${{ secrets.VERCEL_PRODUCTION_URL }}" ]; then
+            url="${{ secrets.VERCEL_PRODUCTION_URL }}"
+            status=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            if [ "$status" != "200" ]; then
+              echo "::error::Deployment verification failed. Status: $status"
+              exit 1
+            fi
+            echo "✅ Deployment verified successfully"
+          else
+            echo "VERCEL_PRODUCTION_URL not set, skipping verification"
+          fi

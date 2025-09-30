@@ -1,0 +1,164 @@
+name: Documentation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '*.md'
+      - 'README.md'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '*.md'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lint-docs:
+    name: Lint Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Markdown files
+        uses: DavidAnson/markdownlint-cli2-action@v18
+        with:
+          globs: |
+            **/*.md
+            !node_modules
+            !**/node_modules
+
+      - name: Check for broken links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.github/markdown-link-check.json'
+          
+  validate-docs:
+    name: Validate Documentation Structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required documentation files
+        run: |
+          required_files=(
+            "README.md"
+            "docs/OPS.md"
+            "docs/ci-cd.md"
+            "docs/tools-and-tech.md"
+            "docs/roadmap.md"
+          )
+          
+          missing_files=()
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              missing_files+=("$file")
+            fi
+          done
+          
+          if [ ${#missing_files[@]} -gt 0 ]; then
+            echo "::error::Missing required documentation files:"
+            printf '%s\n' "${missing_files[@]}"
+            exit 1
+          fi
+          
+          echo "✅ All required documentation files exist"
+
+      - name: Validate documentation cross-references
+        run: |
+          echo "Checking for broken internal links..."
+          
+          # Find all markdown files
+          md_files=$(find docs -name "*.md" -type f)
+          
+          # Check each file for internal references
+          for file in $md_files; do
+            echo "Checking $file..."
+            
+            # Extract referenced files from markdown links
+            refs=$(grep -oP '\[.*?\]\(\K[^)]+' "$file" | grep -v "^http" | grep -v "^#" || true)
+            
+            for ref in $refs; do
+              # Remove anchor links
+              ref_file=$(echo "$ref" | cut -d'#' -f1)
+              if [ -n "$ref_file" ] && [ ! -f "docs/$ref_file" ] && [ ! -f "$ref_file" ]; then
+                echo "::warning file=$file::Potentially broken reference: $ref"
+              fi
+            done
+          done
+
+  build-docs:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate documentation index
+        run: |
+          cat > docs/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Cognomega Documentation</title>
+            <style>
+              body { font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem; }
+              h1 { color: #333; }
+              .doc-list { list-style: none; padding: 0; }
+              .doc-list li { margin: 1rem 0; }
+              .doc-list a { color: #0066cc; text-decoration: none; font-size: 1.1rem; }
+              .doc-list a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <h1>Cognomega Documentation</h1>
+            <ul class="doc-list">
+              <li><a href="OPS.md">Operations Runbook (OPS.md)</a></li>
+              <li><a href="ci-cd.md">CI/CD Documentation</a></li>
+              <li><a href="tools-and-tech.md">Tools & Technologies</a></li>
+              <li><a href="roadmap.md">Roadmap</a></li>
+              <li><a href="tasks.md">Task Backlog</a></li>
+              <li><a href="codex-pr-sop.md">Codex PR SOP</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: docs/
+          retention-days: 30
+
+  update-toc:
+    name: Update Table of Contents
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate TOC for README
+        uses: technote-space/toc-generator@v4
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_PATHS: 'README.md,docs/*.md'
+          TOC_TITLE: '## Table of Contents'
+          FOLDING: false

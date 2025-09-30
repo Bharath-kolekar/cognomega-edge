@@ -1,0 +1,132 @@
+name: Cost Control
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  bundle-size:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - run: corepack enable && corepack prepare pnpm@10.15.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm -r --if-present build
+
+      - name: Analyze bundle sizes
+        id: bundle-analysis
+        run: |
+          echo "## Bundle Size Report" > bundle-report.md
+          echo "" >> bundle-report.md
+          
+          # Frontend bundle size
+          if [ -d "packages/frontend/dist" ]; then
+            echo "### Frontend Bundle" >> bundle-report.md
+            du -sh packages/frontend/dist >> bundle-report.md
+            
+            # Find largest files
+            echo "" >> bundle-report.md
+            echo "**Largest files:**" >> bundle-report.md
+            find packages/frontend/dist -type f -exec du -h {} + | sort -rh | head -10 >> bundle-report.md
+            
+            # Calculate gzipped size
+            total_size=$(find packages/frontend/dist -type f -name "*.js" -exec cat {} + | gzip -c | wc -c)
+            echo "" >> bundle-report.md
+            echo "**Total JS gzipped:** $(echo "scale=2; $total_size / 1024" | bc)KB" >> bundle-report.md
+            
+            # Check if exceeds threshold (50KB as per docs)
+            threshold=51200  # 50KB in bytes
+            if [ $total_size -gt $threshold ]; then
+              echo "bundle_exceeded=true" >> $GITHUB_OUTPUT
+              echo "" >> bundle-report.md
+              echo "⚠️ **WARNING:** Bundle size exceeds 50KB threshold!" >> bundle-report.md
+            else
+              echo "✅ Bundle size is within limits" >> bundle-report.md
+            fi
+          fi
+          
+          # API worker bundle size
+          if [ -d "packages/api/.wrangler" ]; then
+            echo "" >> bundle-report.md
+            echo "### API Worker Bundle" >> bundle-report.md
+            du -sh packages/api/.wrangler >> bundle-report.md
+          fi
+
+      - name: Comment PR with bundle size
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('bundle-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      - name: Fail if bundle size exceeded
+        if: steps.bundle-analysis.outputs.bundle_exceeded == 'true'
+        run: |
+          echo "::error::Bundle size exceeds 50KB threshold. Please optimize your bundle."
+          exit 1
+
+  deployment-cost-estimate:
+    name: Deployment Cost Estimation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Estimate Cloudflare costs
+        run: |
+          echo "## Cloudflare Cost Estimate" > cost-estimate.md
+          echo "" >> cost-estimate.md
+          echo "### Workers" >> cost-estimate.md
+          echo "- Free tier: 100,000 requests/day" >> cost-estimate.md
+          echo "- Paid tier: \$5/month for 10M requests" >> cost-estimate.md
+          echo "" >> cost-estimate.md
+          echo "### Pages" >> cost-estimate.md
+          echo "- Free tier: Unlimited requests" >> cost-estimate.md
+          echo "- 500 builds/month included" >> cost-estimate.md
+          echo "" >> cost-estimate.md
+          echo "### KV Storage" >> cost-estimate.md
+          echo "- Free tier: 100,000 reads/day, 1,000 writes/day, 1GB storage" >> cost-estimate.md
+          echo "- Paid tier: \$0.50/GB/month + request costs" >> cost-estimate.md
+
+      - name: Estimate Vercel costs (if enabled)
+        if: vars.ENABLE_VERCEL_PREVIEW == 'true'
+        run: |
+          echo "" >> cost-estimate.md
+          echo "## Vercel Cost Estimate" >> cost-estimate.md
+          echo "- Free tier: 100GB bandwidth/month" >> cost-estimate.md
+          echo "- Pro tier: \$20/month per team member" >> cost-estimate.md
+
+      - name: Upload cost estimate
+        uses: actions/upload-artifact@v4
+        with:
+          name: cost-estimate
+          path: cost-estimate.md
+          retention-days: 30
