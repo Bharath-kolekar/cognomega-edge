@@ -17,6 +17,7 @@
     "start": "node server.mjs"
   },
   "dependencies": {
+    "@cognomega/si-core": "workspace:*",
     "@neondatabase/serverless": "^1.0.1",
     "express": "^5.1.0",
     "hono": "^4.9.8",
