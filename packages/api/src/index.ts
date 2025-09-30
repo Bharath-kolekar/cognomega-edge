@@ -775,8 +775,8 @@ app.post("/api/si/ask", async (c) => {
               method: "POST",
               headers: { "x-admin-task": c.env.ADMIN_TASK_SECRET || "" },
             }),
-            c.env as any,
-            c.executionCtx as any
+            c.env as Env,
+            c.executionCtx
           );
           console.log(`[trigger rid=${requestId}] internal status=${resp.status}`);
         } catch (e) {
@@ -851,7 +851,7 @@ app.post("/api/si/ask", async (c) => {
       tokens_out,
       request_id: requestId,
       skill,
-    }) as any})
+    })})
   `;
 
   const newBal = await getBalance(sql, userId);
@@ -889,7 +889,7 @@ app.get("/api/jobs/:id", async (c) => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
-  const rows = (await sql`SELECT * FROM job WHERE id = ${id} LIMIT 1`) as any[];
+  const rows = (await sql`SELECT * FROM job WHERE id = ${id} LIMIT 1`) as Array<Record<string, unknown>>;
   if (!rows.length) return c.json({ error: "not_found" }, 404);
   return c.json({ job: rows[0] });
 });
@@ -914,17 +914,17 @@ app.get("/api/jobs/:id/download", async (c) => {
     )
   `;
 
-  const rows = (await sql`SELECT r2_url, result_text FROM job WHERE id = ${id} LIMIT 1`) as any[];
+  const rows = (await sql`SELECT r2_url, result_text FROM job WHERE id = ${id} LIMIT 1`) as Array<{ r2_url?: string; result_text?: string }>;
   if (!rows.length) return c.json({ error: "not_found" }, 404);
 
   const { r2_url, result_text } = rows[0] ?? {};
 
-  if (r2_url && (c.env as any).R2) {
-    const obj = await (c.env as any).R2.get(r2_url);
+  if (r2_url && c.env.R2) {
+    const obj = await c.env.R2.get(r2_url);
     if (obj && obj.body) {
       const ct = (obj.httpMetadata && obj.httpMetadata.contentType) || "application/octet-stream";
       const fname = (r2_url as string).split("/").pop() || "download.bin";
-      return new Response(obj.body as any, {
+      return new Response(obj.body, {
         headers: {
           "content-type": ct,
           "content-disposition": `attachment; filename="${fname}"`,
@@ -982,7 +982,7 @@ app.post("/admin/process-one", async (c) => {
     WHERE status = 'queued'
     ORDER BY created_at ASC
     LIMIT 1
-  `) as any[];
+  `) as Array<{ id?: string; skill?: string; payload_text?: string; r2_file_key?: string }>;
   const count = items.length;
   console.log(`[admin rid=${c.get("rid") || requestIdFrom(c.req.raw)}] queued=${count}`);
   if (!count) return c.json({ ok: true, processed: 0 });
@@ -1014,12 +1014,12 @@ ${spec.slice(0, 200)}
   // Upload to R2 (optional)
   let r2Key: string | null = null;
   try {
-    const primary = (result as any).files?.[0];
-    if (primary && (c.env as any).R2) {
+    const primary = (result as { files?: Array<{ path?: string; contents?: string }> }).files?.[0];
+    if (primary && c.env.R2) {
       const k = `jobs/${j.id}/${primary.path}`;
-      await (c.env as any).R2.put(k, primary.contents, {
+      await c.env.R2.put(k, primary.contents || "", {
         httpMetadata: { contentType: "text/markdown; charset=utf-8" },
-        customMetadata: { job_id: j.id, type: j.type },
+        customMetadata: { job_id: j.id || "", type: j.skill || "" },
       });
       r2Key = k;
     }
@@ -1081,8 +1081,8 @@ app.get("/api/admin/env-snapshot", (c) => {
     AI: !!c.env.AI,
     KEYS: !!c.env.KEYS,
     KV_BILLING: !!c.env.KV_BILLING,
-    R2: !!(c.env as any).R2,
-    R2_UPLOADS: !!(c.env as any).R2_UPLOADS,
+    R2: !!c.env.R2,
+    R2_UPLOADS: !!c.env.R2_UPLOADS,
     KV_PREFS: !!c.env.KV_PREFS,   // <— new: voice prefs KV presence
   };
 
@@ -1105,13 +1105,14 @@ app.get("/api/admin/env-snapshot", (c) => {
  */
 app.post("/api/tts/cartesia/batch", async (c) => {
   const key = c.env.CARTESIA_API_KEY || "";
-  const wants = c.req.header("accept") || "";
+  // wants, voice, and format are for future use
+  // const wants = c.req.header("accept") || "";
 
   // Read JSON body (tolerant)
   const body = await c.req.json().catch(() => ({}));
-  const text = String(body?.text || "");
-  const voice = (body?.voice && String(body.voice)) || undefined;
-  const format = (body?.format && String(body.format)) || "mp3";
+  const text = String((body as { text?: string }).text || "");
+  // const voice = ((body as { voice?: string }).voice && String((body as { voice?: string }).voice)) || undefined;
+  // const format = ((body as { format?: string }).format && String((body as { format?: string }).format)) || "mp3";
 
   if (!text.trim()) return c.json({ error: "missing_text" }, 400);
 
@@ -1172,16 +1173,16 @@ const DEFAULT_PREFS: VoicePrefs = {
   accessibility_mode: false,
 };
 
-function isPlainObject(v: any): v is Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v);
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
-function sanitizePrefs(input: any): VoicePrefs {
+function sanitizePrefs(input: unknown): VoicePrefs {
   const out: VoicePrefs = { ...DEFAULT_PREFS };
   if (!isPlainObject(input)) return out;
 
-  const copyIf = <T>(k: keyof VoicePrefs, pred: (x: any) => x is T) => {
-    if (k in input && pred((input as any)[k])) (out as any)[k] = (input as any)[k];
+  const copyIf = <T>(k: keyof VoicePrefs, pred: (x: unknown) => x is T) => {
+    if (k in input && pred(input[k])) (out[k] as T) = input[k] as T;
   };
 
   copyIf<string>("assistant_name", (x): x is string => typeof x === "string" && x.length <= 64);
@@ -1190,18 +1191,18 @@ function sanitizePrefs(input: any): VoicePrefs {
   copyIf<string>("tts_voice", (x): x is string => typeof x === "string" && x.length <= 64);
   copyIf<number>("tts_speed", (x): x is number => typeof x === "number" && isFinite(x) && x > 0 && x <= 3);
   copyIf<number>("tts_pitch", (x): x is number => typeof x === "number" && isFinite(x) && x >= -24 && x <= 24);
-  if (Array.isArray((input as any).wake_words)) {
-    out.wake_words = (input as any).wake_words
-      .map((s: any) => (typeof s === "string" ? s.trim() : ""))
+  if (Array.isArray((input as Record<string, unknown>).wake_words)) {
+    out.wake_words = ((input as Record<string, unknown>).wake_words as unknown[])
+      .map((s: unknown) => (typeof s === "string" ? s.trim() : ""))
       .filter(Boolean)
       .slice(0, 10);
   }
   copyIf<boolean>("continuous_listen", (x): x is boolean => typeof x === "boolean");
   if (
-    typeof (input as any).sentiment_tone === "string" &&
-    ["supportive", "excited", "calm", "neutral"].includes((input as any).sentiment_tone)
+    typeof (input as Record<string, unknown>).sentiment_tone === "string" &&
+    ["supportive", "excited", "calm", "neutral"].includes((input as Record<string, unknown>).sentiment_tone as string)
   ) {
-    out.sentiment_tone = (input as any).sentiment_tone as any;
+    out.sentiment_tone = (input as Record<string, unknown>).sentiment_tone as "supportive" | "excited" | "calm" | "neutral";
   }
   copyIf<boolean>("accessibility_mode", (x): x is boolean => typeof x === "boolean");
 
@@ -1209,7 +1210,7 @@ function sanitizePrefs(input: any): VoicePrefs {
   const raw = JSON.stringify(input);
   if (raw.length <= 10_000) {
     for (const [k, v] of Object.entries(input)) {
-      if (!(k in out)) (out as any)[k] = v;
+      if (!(k in out)) (out as Record<string, unknown>)[k] = v;
     }
   }
   out.last_updated = new Date().toISOString();
