@@ -213,7 +213,8 @@ export type AgentType =
   | 'database'
   | 'devops'
   | 'testing'
-  | 'orchestrator';
+  | 'orchestrator'
+  | 'multi-modal-reasoning';
 
 export interface AgentTask {
   id: string;
