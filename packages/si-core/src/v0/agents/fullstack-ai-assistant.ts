@@ -20,6 +20,7 @@ import { BackendDevAgent } from './backend-dev-agent';
 import { DatabaseAgent } from './database-agent';
 import { DevOpsAgent } from './devops-agent';
 import { TestingAgent } from './testing-agent';
+import { PersonalizationAgent } from './personalization-agent';
 
 export class FullStackAIAssistant extends BaseAgent {
   private agents: Map<string, IAgent> = new Map();
@@ -51,6 +52,7 @@ export class FullStackAIAssistant extends BaseAgent {
     this.registerSpecializedAgent(new DatabaseAgent());
     this.registerSpecializedAgent(new DevOpsAgent());
     this.registerSpecializedAgent(new TestingAgent());
+    this.registerSpecializedAgent(new PersonalizationAgent());
   }
 
   private registerSpecializedAgent(agent: IAgent): void {
