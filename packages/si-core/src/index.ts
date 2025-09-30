@@ -1,6 +1,6 @@
 // Export all types and functions, handling duplicate names
 export * from './v0/advanced-reasoning-engine';
-export { 
+export type { 
   MemoryEntry,
   UserProfile,
   ProjectContext,

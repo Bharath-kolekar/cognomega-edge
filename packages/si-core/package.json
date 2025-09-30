@@ -1,7 +1,17 @@
 {
   "name": "@cognomega/si-core",
   "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cognomega Super Intelligence Core - Shared TypeScript library for AI intelligence and skills",
   "main": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "dependencies": {
     "react": "^18.3.1",
     "clsx": "^2.1.1",
@@ -13,6 +23,7 @@
     "typescript": "^5.9.2"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

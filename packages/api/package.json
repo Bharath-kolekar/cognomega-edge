@@ -1,8 +1,9 @@
 {
-  "name": "cognomega-api",
+  "name": "@cognomega/api",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "Cognomega API microservice - Cloudflare Worker with Hono framework",
   "engines": {
     "node": ">=20"
   },
@@ -14,9 +15,11 @@
     "build": "wrangler deploy --dry-run --outdir .wrangler/tmp/build",
     "tail": "wrangler tail --format=pretty",
     "check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "start": "node server.mjs"
   },
   "dependencies": {
+    "@cognomega/si-core": "workspace:*",
     "@neondatabase/serverless": "^1.0.1",
     "express": "^5.1.0",
     "hono": "^4.9.8",

@@ -6,11 +6,23 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
     "types": [
       "@cloudflare/workers-types"
-    ]
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@cognomega/si-core": ["../si-core/src"]
+    }
   },
   "include": [
     "src"
+  ],
+  "references": [
+    { "path": "../si-core" }
   ]
 }

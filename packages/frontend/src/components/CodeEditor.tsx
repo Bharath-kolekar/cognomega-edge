@@ -1,16 +1,21 @@
- 
-import React, { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 
-loader.init().then(_monaco => {
+loader.init().then(() => {
   // Optionally configure monaco here
 });
 
-export default function CodeEditor({ language = "typescript", value, onChange }) {
+interface CodeEditorProps {
+  language?: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export default function CodeEditor({ language = "typescript", value, onChange }: CodeEditorProps) {
   const [code, setCode] = useState(value || "");
   const [fixing, setFixing] = useState(false);
-  const [errors, setErrors] = useState([]);
-  const editorRef = useRef();
+  const [errors, setErrors] = useState<string[]>([]);
+  const editorRef = useRef<any>(null);
 
   useEffect(() => {
     if (onChange) onChange(code);
