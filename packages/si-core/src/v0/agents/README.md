@@ -6,14 +6,18 @@ A comprehensive multi-agent AI system for Cognomega that orchestrates specialize
 
 The multi-agent system consists of:
 
+### Core Orchestration Agents
 1. **FullStackAIAssistant (Orchestrator)** - Coordinates all specialized agents
-2. **ProjectPlanningAgent** - Analyzes requirements and creates project plans
-3. **UIDesignAgent** - Creates UI/UX designs and component specifications
-4. **FrontendDevAgent** - Implements frontend components and features
-5. **BackendDevAgent** - Develops backend APIs and business logic
-6. **DatabaseAgent** - Designs schemas and data access layers
-7. **DevOpsAgent** - Handles deployment, CI/CD, and infrastructure
-8. **TestingAgent** - Generates and executes tests
+2. **CognitiveAgent** - Advanced agent with working memory, long-term memory, and attention mechanisms
+
+### Specialized Development Agents
+3. **ProjectPlanningAgent** - Analyzes requirements and creates project plans
+4. **UIDesignAgent** - Creates UI/UX designs and component specifications
+5. **FrontendDevAgent** - Implements frontend components and features
+6. **BackendDevAgent** - Develops backend APIs and business logic
+7. **DatabaseAgent** - Designs schemas and data access layers
+8. **DevOpsAgent** - Handles deployment, CI/CD, and infrastructure
+9. **TestingAgent** - Generates and executes tests
 
 ## Architecture
 
@@ -97,7 +101,51 @@ const task = {
 const result = await planningAgent.execute(task);
 ```
 
+### Using CognitiveAgent
+
+The CognitiveAgent provides advanced cognitive capabilities with human-like memory and attention:
+
+```typescript
+import { CognitiveAgent } from '@cognomega/si-core';
+
+// Create a cognitive agent
+const cognitiveAgent = new CognitiveAgent({
+  name: 'SmartAgent',
+  workingMemoryCapacity: 7,
+  enableLearning: true,
+});
+
+await cognitiveAgent.initialize();
+
+const task = {
+  id: 'task-1',
+  type: 'orchestrator',
+  payload: {
+    action: 'analyze',
+    data: 'Complex problem to solve...',
+  },
+  priority: 8,
+  createdAt: Date.now(),
+};
+
+const result = await cognitiveAgent.execute(task);
+
+// Inspect cognitive state
+console.log('Working Memory:', cognitiveAgent.getWorkingMemorySnapshot());
+console.log('Learning Metrics:', cognitiveAgent.getLearningMetrics());
+```
+
+For detailed information about CognitiveAgent, see [COGNITIVE_AGENT.md](./COGNITIVE_AGENT.md).
+
 ## Agent Capabilities
+
+### CognitiveAgent (NEW!)
+- **Working Memory**: Limited capacity (7±2 items) for active reasoning
+- **Long-Term Memory**: Vector-based persistent knowledge storage
+- **Attention Mechanism**: Focus on relevant information
+- **Multi-Step Reflection**: Learn from successes and failures
+- **Self-Improvement**: Track and improve reasoning quality
+- **Metacognition**: Awareness of own reasoning processes
 
 ### ProjectPlanningAgent
 - Requirements analysis
