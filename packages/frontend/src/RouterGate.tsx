@@ -5,8 +5,8 @@ const LazySketchToApp = React.lazy(() => import("./pages/SketchToApp"));
 const LazyMainApp = React.lazy(() => import("./App"));
 
 /**
- * RouterGate — ultra-light client router
- * - Chooses between the Sketch?App tool and the main App bundle
+ * RouterGate â€” ultra-light client router
+ * - Chooses between the Sketchâ†’App tool and the main App bundle
  * - Handles direct path, hash-based, and query-string routes
  * - Listens to history changes (back/forward)
  * - Gracefully retries on chunk-load failures
@@ -119,7 +119,7 @@ function PageFallback({ isSketch }: { isSketch: boolean }) {
             animation: "spin 0.9s linear infinite",
           }}
         />
-        <div>{isSketch ? "Loading Sketch ? App…" : "Loading app…"}</div>
+        <div>{isSketch ? "Loading Sketch â†’ Appâ€¦" : "Loading appâ€¦"}</div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
@@ -127,15 +127,22 @@ function PageFallback({ isSketch }: { isSketch: boolean }) {
 }
 
 /** Simple error boundary to recover from failed dynamic import / chunk load */
+type ChunkErrorBoundaryProps = {
+  onRetry: () => void;
+  isSketch: boolean;
+  children?: React.ReactNode; // <-- declare children on props
+};
+type ChunkErrorBoundaryState = { error: unknown | null };
+
 class ChunkErrorBoundary extends React.Component<
-  { onRetry: () => void; isSketch: boolean },
-  { error: any }
+  ChunkErrorBoundaryProps,
+  ChunkErrorBoundaryState
 > {
-  constructor(props: any) {
+  constructor(props: ChunkErrorBoundaryProps) {
     super(props);
     this.state = { error: null };
   }
-  static getDerivedStateFromError(error: any) {
+  static getDerivedStateFromError(error: unknown) {
     return { error };
   }
   componentDidCatch() {
@@ -157,7 +164,7 @@ class ChunkErrorBoundary extends React.Component<
     const isChunkErr =
       this.state.error &&
       /Loading chunk [\w-]+ failed|ChunkLoadError|Failed to fetch dynamically imported module/i.test(
-        String(this.state.error?.message || this.state.error)
+        String((this.state.error as any)?.message || this.state.error)
       );
 
     return (
@@ -225,7 +232,7 @@ class ChunkErrorBoundary extends React.Component<
                 fontSize: 12,
               }}
             >
-              {String(this.state.error?.stack || this.state.error)}
+              {String((this.state.error as any)?.stack || this.state.error)}
             </pre>
           </details>
         </div>

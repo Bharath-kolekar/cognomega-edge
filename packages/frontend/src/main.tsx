@@ -265,9 +265,11 @@ async function mount() {
 mount();
 
 // Make a helper available to the app & DevTools
+
 declare global {
   interface Window {
-    __cogGetTurnstileToken?: () => Promise<string>;
+    // …
+    __cogGetTurnstileToken?: (opts?: { sitekey?: string }) => Promise<string>;
   }
 }
 window.__cogGetTurnstileToken = () =>

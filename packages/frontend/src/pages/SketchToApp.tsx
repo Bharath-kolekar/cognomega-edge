@@ -42,6 +42,11 @@ function readAnyToken(): string | null {
   return null;
 }
 
+function headersToRecord(h: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  h.forEach((v, k) => (out[k] = v));
+  return out;
+}
 function writeAllTokens(token: string, exp?: number) {
   try {
     localStorage.setItem(KEY_GUEST, token);
@@ -106,7 +111,7 @@ async function mintGuestToken(): Promise<string | null> {
   return null;
 }
 
-/** Ensure we have *some* token (don’t over-validate expiry for guest). */
+/** Ensure we have *some* token (donï¿½t over-validate expiry for guest). */
 async function ensureAuthToken(force = false): Promise<string | null> {
   if (!force) {
     const t = readAnyToken();
@@ -117,7 +122,7 @@ async function ensureAuthToken(force = false): Promise<string | null> {
 
 /** Build headers; never set content-type for multipart. */
 function makeHeaders(extra?: Record<string, string>): Record<string, string> {
-  const base = (authHeaders() as Record<string, string>) || {};
+  const base = headersToRecord(authHeaders());
   const h: Record<string, string> = { Accept: "application/json", ...base, ...(extra || {}) };
   if (!("Authorization" in h)) {
     const tok = readAnyToken();
@@ -200,7 +205,7 @@ export default function SketchToApp() {
     const id = p.get("job");
     if (id) {
       setJobId(id);
-      setInfo("Restored job from URL. Polling…");
+      setInfo("Restored job from URL. Pollingï¿½");
       setError(null);
       startPolling(id);
     }
@@ -281,7 +286,7 @@ export default function SketchToApp() {
         } catch (e: any) {
           if (pollAbort.current?.signal.aborted) return;
           if (Date.now() - pollStart.current <= POLL_TIMEOUT_MS) {
-            setInfo("Reconnecting…");
+            setInfo("Reconnectingï¿½");
             pollTimer.current = window.setTimeout(loop, POLL_INTERVAL_MS);
           } else {
             setInfo(null);
@@ -300,7 +305,7 @@ export default function SketchToApp() {
     async (f: File) => {
       setBusy(true);
       setError(null);
-      setInfo("Uploading…");
+      setInfo("Uploadingï¿½");
       setJob(null);
       setJobId(null);
 
@@ -350,7 +355,7 @@ export default function SketchToApp() {
                 const t = await r.text();
                 throw new Error(`${r.status} ${r.statusText} | ${t.slice(0, 160)}`);
               }
-              // Not JSON but OK — keep probing next (some endpoints may redirect)
+              // Not JSON but OK ï¿½ keep probing next (some endpoints may redirect)
               continue;
             }
             resp = r;
@@ -383,10 +388,10 @@ export default function SketchToApp() {
 
         if (job_id) {
           setJobId(job_id);
-          setInfo("Uploaded. Processing…");
+          setInfo("Uploaded. Processingï¿½");
           startPolling(job_id);
         } else {
-          // Successful upload without a job — surface result, but no polling
+          // Successful upload without a job ï¿½ surface result, but no polling
           setInfo("Uploaded ? (no processing job returned by server)");
         }
       } catch (e: any) {
@@ -430,7 +435,7 @@ export default function SketchToApp() {
   const onDownload = useCallback(async () => {
     if (!jobId) return;
     setError(null);
-    setInfo("Preparing download…");
+    setInfo("Preparing downloadï¿½");
     try {
       await ensureAuthToken();
       let r = await fetch(
@@ -523,7 +528,7 @@ export default function SketchToApp() {
                 {job.status}
                 {typeof job.progress !== "undefined" &&
                   job.progress !== null &&
-                  ` • ${String(job.progress)}%`}
+                  ` ï¿½ ${String(job.progress)}%`}
               </span>
             )}
           </div>
@@ -551,7 +556,7 @@ export default function SketchToApp() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={3}
-                placeholder="Add any notes about the UI or behavior…"
+                placeholder="Add any notes about the UI or behaviorï¿½"
                 className={inputCls}
               />
             </div>
@@ -567,7 +572,7 @@ export default function SketchToApp() {
                 }`}
                 title="Upload selected file (Ctrl/Cmd + Enter)"
               >
-                {busy ? "Uploading…" : "Upload"}
+                {busy ? "Uploadingï¿½" : "Upload"}
               </button>
 
               {jobId && (
