@@ -1,0 +1,160 @@
+.github/workflows/uptime.yml:32:            https://api.cognomega.com/api/si/ask)
+.github/workflows/uptime.yml:43:          curl -s -X POST https://api.cognomega.com/api/si/ask \
+OPS.md:194:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask" ^
+OPS.md:214:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST -Headers $hdr -Body $body
+OPS.md:227:$r = Invoke-RestMethod -Uri "https://api.cognomega.com/api/si/ask" -Method POST -Headers $headers -Body $body -ResponseHeadersVariable rh
+OPS.md:250:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+OPS.md:252:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+OPS.md:258:fetch("https://api.cognomega.com/api/si/ask", {
+OPS.md:301:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/cleanup' -Method POST `
+OPS.md:312:  -Uri "https://api.cognomega.com/api/upload/direct?filename=random.bin" `
+OPS.md:327:$env = Invoke-RestMethod -Uri "https://api.cognomega.com/api/admin/env-snapshot" -Headers @{ "X-Admin-Key" = $ADMIN }
+OPS.md:452:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask" ^
+OPS.md:479:$ai = Invoke-RestMethod "https://api.cognomega.com/api/ai/binding"
+README.md:181:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask"
+README.md:198:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST -Headers $hdr -Body $body
+README.md:211:$r = Invoke-RestMethod -Uri "https://api.cognomega.com/api/si/ask" -Method POST -Headers $headers -Body $body -ResponseHeadersVariable rh
+README.md:234:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+README.md:236:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+README.md:242:fetch("https://api.cognomega.com/api/si/ask", {
+README.md:270:  -Uri "https://api.cognomega.com/api/upload/direct?filename=random.bin" `
+README.md:294:    Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST `
+README.md:347:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask"
+README.md:353:curl.exe -i -X POST "https://api.cognomega.com/api/si/ask" `
+README.md:364:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+README.md:370:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+README.md:376:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/ping' -Headers @{ 'X-Admin-Key'='<ADMIN_API_KEY>' }
+README.md:382:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/cleanup' -Method POST `
+README.md:427:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask" ^
+README.md:443:Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding"
+docs/2025-09-21-api-request-id-cors-env-snapshot.md:13:1) Preflight → `curl -i -X OPTIONS https://api.cognomega.com/api/si/ask`
+docs/handoff-checklist.md:61:$req = [System.Net.HttpWebRequest]::Create("https://api.cognomega.com/api/si/ask")
+docs/handoff-checklist.md:83:$ai = Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding"
+docs/handoff-checklist.md:156:$req = [System.Net.HttpWebRequest]::Create("https://api.cognomega.com/api/si/ask")
+docs/handoff-checklist.md:192:Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding" | ConvertTo-Json -Compress
+docs/handoff-checklist.md:199:$r = Invoke-RestMethod -Uri "https://api.cognomega.com/api/admin/env-snapshot" -Headers $hdr -Method GET
+docs/handoff-checklist.md:238:$req=[System.Net.HttpWebRequest]::Create("https://api.cognomega.com/api/si/ask");$req.Method="OPTIONS"
+docs/handoff-checklist.md:254:$ai=Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding" | ConvertTo-Json -Compress
+docs/tasks.md:66:$req = [System.Net.HttpWebRequest]::Create("https://api.cognomega.com/api/si/ask")
+docs/tasks.md:78:$ai = Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding"
+docs/tasks.md:110:$req = [System.Net.HttpWebRequest]::Create("https://api.cognomega.com/api/si/ask")
+docs/tasks.md:121:$r = Invoke-RestMethod -Uri "https://api.cognomega.com/api/si/ask" -Method POST `
+docs/tasks.md:183:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST -Headers $hdr -Body $body
+imports/v0-20250927-003305/.github/workflows/uptime.yml:32:            https://api.cognomega.com/api/si/ask)
+imports/v0-20250927-003305/.github/workflows/uptime.yml:43:          curl -s -X POST https://api.cognomega.com/api/si/ask \
+imports/v0-20250927-003305/README.md:181:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask"
+imports/v0-20250927-003305/README.md:198:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST -Headers $hdr -Body $body
+imports/v0-20250927-003305/README.md:211:$r = Invoke-RestMethod -Uri "https://api.cognomega.com/api/si/ask" -Method POST -Headers $headers -Body $body -ResponseHeadersVariable rh
+imports/v0-20250927-003305/README.md:234:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+imports/v0-20250927-003305/README.md:236:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+imports/v0-20250927-003305/README.md:242:fetch("https://api.cognomega.com/api/si/ask", {
+imports/v0-20250927-003305/README.md:270:  -Uri "https://api.cognomega.com/api/upload/direct?filename=random.bin" `
+imports/v0-20250927-003305/README.md:294:    Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits/adjust' -Method POST `
+imports/v0-20250927-003305/README.md:347:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask"
+imports/v0-20250927-003305/README.md:353:curl.exe -i -X POST "https://api.cognomega.com/api/si/ask" `
+imports/v0-20250927-003305/README.md:364:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/credits' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+imports/v0-20250927-003305/README.md:370:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/billing/usage?limit=5' -Headers @{ 'X-User-Email'='vihaan@cognomega.com' }
+imports/v0-20250927-003305/README.md:376:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/ping' -Headers @{ 'X-Admin-Key'='<ADMIN_API_KEY>' }
+imports/v0-20250927-003305/README.md:382:Invoke-RestMethod -Uri 'https://api.cognomega.com/api/admin/cleanup' -Method POST `
+imports/v0-20250927-003305/README.md:427:curl.exe -i -X OPTIONS "https://api.cognomega.com/api/si/ask" ^
+imports/v0-20250927-003305/README.md:443:Invoke-RestMethod -Uri "https://api.cognomega.com/api/ai/binding"
+packages/frontend/node_modules._old_152458/debug/README.md:178:[`util.inspect()`](https://nodejs.org/api/util.html#util_util_inspect_object_options)
+packages/frontend/node_modules._old_152458/electron-to-chromium/README.md:11:# Electron-to-Chromium [![npm](https://img.shields.io/npm/v/electron-to-chromium.svg)](https://www.npmjs.com/package/electron-to-chromium) [![travis](https://img.shields.io/travis/Kilian/electron-to-chromium/master.svg)](https://travis-ci.org/Kilian/electron-to-chromium) [![npm-downloads](https://img.shields.io/npm/dm/electron-to-chromium.svg)](https://www.npmjs.com/package/electron-to-chromium) [![codecov](https://codecov.io/gh/Kilian/electron-to-chromium/branch/master/graph/badge.svg)](https://codecov.io/gh/Kilian/electron-to-chromium)[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FKilian%2Felectron-to-chromium.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2FKilian%2Felectron-to-chromium?ref=badge_shield)
+packages/frontend/node_modules._old_152458/electron-to-chromium/README.md:186:[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FKilian%2Felectron-to-chromium.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2FKilian%2Felectron-to-chromium?ref=badge_large)
+packages/frontend/node_modules._old_152458/esbuild/README.md:3:This is a JavaScript bundler and minifier. See https://github.com/evanw/esbuild and the [JavaScript API documentation](https://esbuild.github.io/api/) for details.
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:9:  /** Documentation: https://esbuild.github.io/api/#sourcemap */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:11:  /** Documentation: https://esbuild.github.io/api/#legal-comments */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:13:  /** Documentation: https://esbuild.github.io/api/#source-root */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:15:  /** Documentation: https://esbuild.github.io/api/#sources-content */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:18:  /** Documentation: https://esbuild.github.io/api/#format */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:20:  /** Documentation: https://esbuild.github.io/api/#global-name */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:22:  /** Documentation: https://esbuild.github.io/api/#target */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:24:  /** Documentation: https://esbuild.github.io/api/#supported */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:26:  /** Documentation: https://esbuild.github.io/api/#platform */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:29:  /** Documentation: https://esbuild.github.io/api/#mangle-props */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:31:  /** Documentation: https://esbuild.github.io/api/#mangle-props */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:33:  /** Documentation: https://esbuild.github.io/api/#mangle-props */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:35:  /** Documentation: https://esbuild.github.io/api/#mangle-props */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:37:  /** Documentation: https://esbuild.github.io/api/#drop */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:39:  /** Documentation: https://esbuild.github.io/api/#drop-labels */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:41:  /** Documentation: https://esbuild.github.io/api/#minify */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:43:  /** Documentation: https://esbuild.github.io/api/#minify */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:45:  /** Documentation: https://esbuild.github.io/api/#minify */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:47:  /** Documentation: https://esbuild.github.io/api/#minify */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:49:  /** Documentation: https://esbuild.github.io/api/#line-limit */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:51:  /** Documentation: https://esbuild.github.io/api/#charset */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:53:  /** Documentation: https://esbuild.github.io/api/#tree-shaking */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:55:  /** Documentation: https://esbuild.github.io/api/#ignore-annotations */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:58:  /** Documentation: https://esbuild.github.io/api/#jsx */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:60:  /** Documentation: https://esbuild.github.io/api/#jsx-factory */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:62:  /** Documentation: https://esbuild.github.io/api/#jsx-fragment */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:64:  /** Documentation: https://esbuild.github.io/api/#jsx-import-source */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:66:  /** Documentation: https://esbuild.github.io/api/#jsx-development */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:68:  /** Documentation: https://esbuild.github.io/api/#jsx-side-effects */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:71:  /** Documentation: https://esbuild.github.io/api/#define */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:73:  /** Documentation: https://esbuild.github.io/api/#pure */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:75:  /** Documentation: https://esbuild.github.io/api/#keep-names */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:78:  /** Documentation: https://esbuild.github.io/api/#color */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:80:  /** Documentation: https://esbuild.github.io/api/#log-level */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:82:  /** Documentation: https://esbuild.github.io/api/#log-limit */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:84:  /** Documentation: https://esbuild.github.io/api/#log-override */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:87:  /** Documentation: https://esbuild.github.io/api/#tsconfig-raw */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:111:  /** Documentation: https://esbuild.github.io/api/#bundle */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:113:  /** Documentation: https://esbuild.github.io/api/#splitting */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:115:  /** Documentation: https://esbuild.github.io/api/#preserve-symlinks */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:117:  /** Documentation: https://esbuild.github.io/api/#outfile */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:119:  /** Documentation: https://esbuild.github.io/api/#metafile */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:121:  /** Documentation: https://esbuild.github.io/api/#outdir */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:123:  /** Documentation: https://esbuild.github.io/api/#outbase */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:125:  /** Documentation: https://esbuild.github.io/api/#external */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:127:  /** Documentation: https://esbuild.github.io/api/#packages */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:129:  /** Documentation: https://esbuild.github.io/api/#alias */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:131:  /** Documentation: https://esbuild.github.io/api/#loader */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:133:  /** Documentation: https://esbuild.github.io/api/#resolve-extensions */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:135:  /** Documentation: https://esbuild.github.io/api/#main-fields */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:137:  /** Documentation: https://esbuild.github.io/api/#conditions */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:139:  /** Documentation: https://esbuild.github.io/api/#write */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:141:  /** Documentation: https://esbuild.github.io/api/#allow-overwrite */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:143:  /** Documentation: https://esbuild.github.io/api/#tsconfig */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:145:  /** Documentation: https://esbuild.github.io/api/#out-extension */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:147:  /** Documentation: https://esbuild.github.io/api/#public-path */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:149:  /** Documentation: https://esbuild.github.io/api/#entry-names */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:151:  /** Documentation: https://esbuild.github.io/api/#chunk-names */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:153:  /** Documentation: https://esbuild.github.io/api/#asset-names */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:155:  /** Documentation: https://esbuild.github.io/api/#inject */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:157:  /** Documentation: https://esbuild.github.io/api/#banner */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:159:  /** Documentation: https://esbuild.github.io/api/#footer */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:161:  /** Documentation: https://esbuild.github.io/api/#entry-points */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:163:  /** Documentation: https://esbuild.github.io/api/#stdin */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:167:  /** Documentation: https://esbuild.github.io/api/#working-directory */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:169:  /** Documentation: https://esbuild.github.io/api/#node-paths */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:236:/** Documentation: https://esbuild.github.io/api/#serve-arguments */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:256:/** Documentation: https://esbuild.github.io/api/#serve-return-values */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:263:  /** Documentation: https://esbuild.github.io/api/#sourcefile */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:265:  /** Documentation: https://esbuild.github.io/api/#loader */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:267:  /** Documentation: https://esbuild.github.io/api/#banner */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:269:  /** Documentation: https://esbuild.github.io/api/#footer */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:463:/** Documentation: https://esbuild.github.io/api/#metafile */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:514:  /** Documentation: https://esbuild.github.io/api/#rebuild */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:517:  /** Documentation: https://esbuild.github.io/api/#watch */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:520:  /** Documentation: https://esbuild.github.io/api/#serve */
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:540: * Documentation: https://esbuild.github.io/api/#build
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:551: * Documentation: https://esbuild.github.io/api/#build
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:564: * Documentation: https://esbuild.github.io/api/#transform
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:586: * Documentation: https://esbuild.github.io/api/#analyze
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:596: * Documentation: https://esbuild.github.io/api/#build
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:606: * Documentation: https://esbuild.github.io/api/#transform
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:624: * Documentation: https://esbuild.github.io/api/#analyze
+packages/frontend/node_modules._old_152458/esbuild/lib/main.d.ts:636: * Documentation: https://esbuild.github.io/api/#browser
+packages/frontend/node_modules._old_152458/esbuild/lib/main.js:2101:    // From node's documentation: https://nodejs.org/api/worker_threads.html
+packages/frontend/node_modules._old_152458/escalade/readme.md:34:This is the primary/default mode. It makes use of `async`/`await` and [`util.promisify`](https://nodejs.org/api/util.html#util_util_promisify_original).
+packages/frontend/node_modules._old_152458/graceful-fs/README.md:10:## Improvements over [fs module](https://nodejs.org/api/fs.html)
+packages/frontend/node_modules._old_152458/jiti/README.md:93:You can globally register jiti using [global hooks](https://nodejs.org/api/module.html#initialize). (Important: Requires Node.js > 20)
+packages/frontend/node_modules._old_152458/jiti/lib/jiti-cli.mjs:13:// https://nodejs.org/api/module.html#moduleenablecompilecachecachedir
+packages/frontend/node_modules._old_152458/jiti/lib/jiti-hooks.mjs:10:// https://nodejs.org/api/module.html#initialize
+packages/frontend/node_modules._old_152458/jiti/lib/jiti-hooks.mjs:15:// https://nodejs.org/api/module.html#resolvespecifier-context-nextresolve
+packages/frontend/node_modules._old_152458/jiti/lib/jiti-hooks.mjs:30:// https://nodejs.org/api/module.html#loadurl-context-nextload
+packages/frontend/node_modules._old_152458/jiti/lib/jiti-register.mjs:1:// https://nodejs.org/api/module.html#moduleregisterspecifier-parenturl-options
+packages/frontend/node_modules._old_152458/minipass/README.md:4:stream](https://nodejs.org/api/stream.html#stream_class_stream_passthrough)
+packages/frontend/node_modules._old_152458/typescript/lib/typescript.d.ts:7258:         * @see https://nodejs.org/api/fs.html#fs_fs_realpathsync_path_options
+packages/frontend/node_modules._old_152458/typescript/lib/typescript.d.ts:8474:         * A good implementation is node.js' `crypto.createHash`. (https://nodejs.org/api/crypto.html#crypto_crypto_createhash_algorithm)
