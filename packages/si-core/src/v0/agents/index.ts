@@ -17,6 +17,21 @@ export { BackendDevAgent } from './backend-dev-agent';
 export { DatabaseAgent } from './database-agent';
 export { DevOpsAgent } from './devops-agent';
 export { TestingAgent } from './testing-agent';
+export { SelfImprovingAgent } from './self-improving-agent';
+
+// Export self-improving agent interfaces
+export type {
+  LearningMetrics,
+  ErrorPattern,
+  ImprovementPlan,
+  ImprovementStep,
+  IMetaCognitionModule,
+  ReasoningAnalysis,
+  IVectorDatabase,
+  VectorSearchResult,
+  ISelfModificationEngine,
+  ModificationResult,
+} from './self-improving-agent';
 
 // Orchestrator
 export { FullStackAIAssistant } from './fullstack-ai-assistant';
