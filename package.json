@@ -9,6 +9,13 @@
     "build": "pnpm -r build",
     "dev:frontend": "pnpm -C packages/frontend dev",
     "dev:builder": "pnpm -C packages/builder dev",
-    "dev:api": "pnpm -C packages/api dev"
-  }
+    "dev:api": "pnpm -C packages/api dev",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0"
+  },
+  "type": "module"
 }
