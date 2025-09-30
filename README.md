@@ -225,6 +225,137 @@ $response | ConvertTo-Json -Depth 10
 
 ---
 
+## 🤖 Multi-Agent AI System
+
+**New in this release:** A comprehensive multi-agent AI system that coordinates specialized agents to build complete full-stack applications.
+
+### Architecture
+
+The system consists of 8 specialized agents:
+
+1. **FullStackAIAssistant (Orchestrator)** - Coordinates all specialized agents and manages workflow
+2. **ProjectPlanningAgent** - Analyzes requirements, creates project plans, assesses risks
+3. **UIDesignAgent** - Creates UI/UX designs, component specifications, themes
+4. **FrontendDevAgent** - Implements frontend components (React/Next.js/Vue)
+5. **BackendDevAgent** - Develops backend APIs and business logic
+6. **DatabaseAgent** - Designs schemas, migrations, and data access layers
+7. **DevOpsAgent** - Handles deployment, CI/CD, containerization
+8. **TestingAgent** - Generates unit, integration, and E2E tests
+
+### API Endpoints
+
+```powershell
+# Get agent system status
+Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/agents/status'
+
+# Build a full-stack project
+$requirements = @{
+  name = "E-Commerce Platform"
+  description = "Modern e-commerce with cart and checkout"
+  framework = "Next.js"
+  targetPlatform = "fullstack"
+  features = @("Product catalog", "Shopping cart", "User auth", "Admin dashboard")
+  techStack = @{
+    frontend = @("next.js", "react", "tailwindcss")
+    backend = @("node.js", "express")
+    database = @("postgresql")
+  }
+} | ConvertTo-Json -Depth 5
+
+$response = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/agents/build' `
+  -Method POST -ContentType 'application/json' -Body $requirements
+
+# Get agent health status
+Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/agents/health'
+
+# Create a project plan only
+$planReq = @{
+  requirements = @{
+    name = "Blog Platform"
+    description = "Personal blog with markdown support"
+    framework = "Next.js"
+    features = @("Blog posts", "Comments", "Search")
+  }
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/agents/plan' `
+  -Method POST -ContentType 'application/json' -Body $planReq
+```
+
+### Using from Code
+
+```typescript
+import { 
+  createFullStackAssistant, 
+  ProjectRequirements 
+} from '@cognomega/si-core';
+
+async function buildApp() {
+  const assistant = createFullStackAssistant();
+  await assistant.initialize();
+
+  const requirements: ProjectRequirements = {
+    name: 'My App',
+    description: 'A modern web application',
+    framework: 'Next.js',
+    targetPlatform: 'fullstack',
+    features: ['Authentication', 'Dashboard', 'API'],
+  };
+
+  const task = {
+    id: 'build-1',
+    type: 'orchestrator',
+    payload: { requirements },
+    priority: 10,
+    createdAt: Date.now(),
+  };
+
+  const result = await assistant.execute(task);
+  console.log('Build result:', result);
+}
+```
+
+### Integration with SuperIntelligenceEngine
+
+The multi-agent system is fully integrated with the existing SuperIntelligenceEngine:
+
+```typescript
+import { 
+  SuperIntelligenceEngine,
+  registerMultiAgentSystem 
+} from '@cognomega/si-core';
+
+// Create engine and register agents
+const engine = new SuperIntelligenceEngine();
+registerMultiAgentSystem(engine);
+
+// Use through the engine
+const response = engine.process({
+  text: 'Build a React e-commerce application',
+  agents: ['fullstack-assistant'],
+});
+```
+
+### Documentation
+
+Comprehensive documentation is available:
+
+* **Multi-Agent System Guide**: [`packages/si-core/src/v0/agents/README.md`](./packages/si-core/src/v0/agents/README.md)
+* **Example Usage**: [`packages/si-core/src/v0/agents/example-usage.ts`](./packages/si-core/src/v0/agents/example-usage.ts)
+* **API Routes**: [`packages/api/src/routes/agents.ts`](./packages/api/src/routes/agents.ts)
+
+### Key Features
+
+* **Intelligent Orchestration**: Automatically determines optimal task execution order
+* **Dependency Management**: Handles complex task dependencies
+* **Type Safety**: Full TypeScript support with comprehensive type definitions
+* **Error Handling**: Graceful degradation and detailed error reporting
+* **Monitoring**: Real-time agent health and status tracking
+* **Extensible**: Easy to add custom agents
+* **Compatible**: Seamless integration with existing Cognomega architecture
+
+---
+
 ## 🧾 Billing/Usage & Credits
 
 * `/api/billing/balance`, `/api/billing/usage`, and legacy aliases (e.g., `/api/credits`) are present and kept.

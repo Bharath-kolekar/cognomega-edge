@@ -166,7 +166,7 @@ class SemanticNLPEngine {
     // Get basic NLP analysis
     const basicAnalysis = await nlpProcessor.analyzeTextEnhanced(text);
 
-    // Entities, context, topics, knowledge graph (from main)
+    // Entities, context, topics, knowledge graph
     const semanticEntities: SemanticEntity[] = extractEntities(text).map((e, idx) => ({
       type: 'ProperNoun',
       value: e,
@@ -459,8 +459,8 @@ export function analyzeSemantics(text: string): SemanticAnalysis {
   const knowledgeGraph = activeKnowledgeGraph(text);
 
   return {
-    entities,
-    intent,
+    entities: {},
+    intent: intent as IntentType,
     sentiment,
     context,
     topics,
