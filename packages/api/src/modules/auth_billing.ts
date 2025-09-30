@@ -67,7 +67,7 @@ export interface AuthBillingEnv {
   ADMIN_API_KEY?: string;
 
   // Bindings
-  AI: any;                 // Workers AI binding
+  AI: Ai;                  // Workers AI binding
   KEYS: KVNamespace;       // public JWKS
   KV_BILLING: KVNamespace; // credits + usage + jobs
   R2_UPLOADS: R2Bucket;    // R2 bucket for uploads
@@ -215,7 +215,7 @@ function b64uToUtf8(s: string): string {
   }
 }
 
-async function getJWKS(env: AuthBillingEnv): Promise<{ keys: any[] }> {
+async function getJWKS(env: AuthBillingEnv): Promise<{ keys: Array<Record<string, unknown>> }> {
   const raw = await env.KEYS.get("jwks");
   if (raw) {
     try {

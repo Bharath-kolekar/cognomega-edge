@@ -469,7 +469,6 @@ async function completeWithProvider(c: Context<{ Bindings: Env }>, body: { promp
 }
 
 // -------- DB helpers --------
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function ensureSchema(_c: Context<{ Bindings: Env }>, sql: NeonQueryFunction<false, false>) {
   // Try extension; some platforms disallow CREATE EXTENSION.
   try {
@@ -1229,7 +1228,7 @@ app.get("/api/voice/prefs", async (c) => {
   if (raw) {
     try {
       const j = JSON.parse(raw);
-      if (isPlainObject(j)) prefs = { ...DEFAULT_PREFS, ...(j as any) };
+      if (isPlainObject(j)) prefs = { ...DEFAULT_PREFS, ...sanitizePrefs(j) };
     } catch {
       // ignore bad JSON; treat as defaults
     }
@@ -1243,7 +1242,7 @@ app.get("/api/voice/prefs", async (c) => {
     200,
     {
       "Cache-Control": "no-store",
-    } as any
+    }
   );
 });
 
@@ -1273,7 +1272,7 @@ app.put("/api/voice/prefs", async (c) => {
     200,
     {
       "Cache-Control": "no-store",
-    } as any
+    }
   );
 });
 
@@ -1292,7 +1291,7 @@ export default {
 
     await (async () => {
       for (let i = 0; i < 5; i++) {
-        const resp = await app.fetch(makeReq(), env as any, ctx as any);
+        const resp = await app.fetch(makeReq(), env, ctx);
         if (!resp.ok) break;
         const text = await resp.text().catch(() => "");
         if (text.includes('"processed":0')) break; // nothing to do
