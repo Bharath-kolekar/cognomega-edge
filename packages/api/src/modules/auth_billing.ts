@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // api/src/modules/auth_billing.ts
 // Cognomega API — Auth + Billing + Jobs + SI + Uploads
 // Self-contained router you can mount from api/src/index.ts without refactors.
@@ -20,6 +21,7 @@
 import type { Hono } from "hono";
 
 /* ---------- Minimal R2 type (local) ---------- */
+ 
 type R2Bucket = {
   put: (
     key: string,
@@ -37,6 +39,7 @@ type R2Bucket = {
     | null
   >;
 };
+ 
 
 // KV list typing (prevents implicit any recursion errors)
 type KVListResult = Awaited<ReturnType<KVNamespace["list"]>>;
@@ -67,7 +70,7 @@ export interface AuthBillingEnv {
   ADMIN_API_KEY?: string;
 
   // Bindings
-  AI: any;                 // Workers AI binding
+  AI: Ai;                  // Workers AI binding
   KEYS: KVNamespace;       // public JWKS
   KV_BILLING: KVNamespace; // credits + usage + jobs
   R2_UPLOADS: R2Bucket;    // R2 bucket for uploads
@@ -215,7 +218,7 @@ function b64uToUtf8(s: string): string {
   }
 }
 
-async function getJWKS(env: AuthBillingEnv): Promise<{ keys: any[] }> {
+async function getJWKS(env: AuthBillingEnv): Promise<{ keys: Array<Record<string, unknown>> }> {
   const raw = await env.KEYS.get("jwks");
   if (raw) {
     try {
@@ -893,7 +896,7 @@ export async function handleAuthBilling(
           body?.params && typeof body.params === "object" ? body.params : undefined;
 
         const job = await createJob(env, email, type, params);
-        if (type === "si") (ctx as any).waitUntil(processSiJob(env, job.id));
+        if (type === "si") ctx.waitUntil(processSiJob(env, job.id));
         return toJson({ job }, req, env, 200);
       }
 
@@ -966,7 +969,7 @@ export async function handleAuthBilling(
 
     // ---- AI binding + test
     if (p === "/api/ai/binding") {
-      const ok = !!(env as any).AI && typeof (env as any).AI.run === "function";
+      const ok = !!env.AI && typeof env.AI.run === "function";
       return toJson({ ai_bound: ok }, req, env, ok ? 200 : 500);
     }
     if (p === "/api/ai/test") {
@@ -979,7 +982,7 @@ export async function handleAuthBilling(
       const prompt = (body?.prompt ?? "Say 'pong'").toString();
       try {
         const model = env.CF_AI_MODEL || "@cf/meta/llama-3.1-8b-instruct";
-        const result = await (env as any).AI.run(model, {
+        const result = await env.AI.run(model, {
           messages: [{ role: "user", content: prompt }],
           max_tokens: 64,
         });
@@ -1155,8 +1158,8 @@ export async function handleAuthBilling(
         return toJson({ error: "method_not_allowed" }, req, env, 405);
       const email = getCallerEmail(req);
       if (!email) return toJson({ error: "missing_email" }, req, env, 400);
-      const bucket = (env as any).R2_UPLOADS as R2Bucket | undefined;
-      if (!bucket || typeof (bucket as any).put !== "function")
+      const bucket = env.R2_UPLOADS as R2Bucket | undefined;
+      if (!bucket || typeof (bucket as R2Bucket).put !== "function")
         return toJson({ error: "r2_not_bound" }, req, env, 500);
 
       const clRaw = req.headers.get("content-length") || "";
@@ -1185,7 +1188,7 @@ export async function handleAuthBilling(
       const safeEmail = (email || "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 64);
       const key = `uploads/${yyyy}/${mm}/${dd}/${safeEmail}/${crypto.randomUUID()}-${cleaned}`;
 
-      const putRes = await (bucket as R2Bucket).put(key, req.body as any, {
+      const putRes = await (bucket as R2Bucket).put(key, req.body, {
         httpMetadata: { contentType: ct },
         customMetadata: {
           uploader: email,
@@ -1199,8 +1202,8 @@ export async function handleAuthBilling(
           ok: true,
           key,
           size,
-          etag: (putRes as any)?.etag || null,
-          version: (putRes as any)?.version || null,
+          etag: (putRes as Record<string, unknown>)?.etag || null,
+          version: (putRes as Record<string, unknown>)?.version || null,
           content_type: ct,
         },
         req,
@@ -1251,7 +1254,7 @@ export async function handleAuthBilling(
         );
 
         const requestId = reqIdFrom(req);
-        (ctx as any).waitUntil(
+        ctx.waitUntil(
           appendUsage(
             env,
             email,

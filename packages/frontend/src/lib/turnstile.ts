@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/lib/turnstile.ts
 // Single, HMR-safe Turnstile loader + token getter.
 // - Loads the script exactly once (cached on window)

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/components/DirectR2Upload.tsx
 import React, { useRef, useState } from "react";
 import { apiUrl } from "@/lib/api/apiBase";

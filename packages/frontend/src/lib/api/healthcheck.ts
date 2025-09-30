@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/lib/api/healthcheck.ts
 import { apiUrl } from "@/lib/api/apiBase";
 

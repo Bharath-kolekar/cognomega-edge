@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/lib/api/sketchToApp.tsx
 /**
  * Sketch → App API utilities (production-grade)

@@ -17,9 +17,9 @@ import { registerAuthBillingRoutes } from "./modules/auth_billing";
 // Immediate background trigger after enqueue (internal-only) + cron fallback.
 // STRICT CORS: single env-driven layer (preflight + response), no duplicates.
 
-import { Hono } from "hono";
+import { Hono, Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { neon } from "@neondatabase/serverless";
+import { neon, NeonQueryFunction } from "@neondatabase/serverless";
 
 // --- Top-level CORS preflight (put before routes) ---
 const BASE_ALLOW_HEADERS = [
@@ -55,7 +55,7 @@ const EXPOSE_ALWAYS = [
  * - Stable Pages domain + preview subdomains
  * - Local dev origins
  */
-function pickAllowedOrigin(req: Request, env: any) {
+function pickAllowedOrigin(req: Request, env: Env): string {
   const origin = req.headers.get("Origin") || "";
   if (!origin) return "";
   const cfPagesStable = "https://cognomega-frontend.pages.dev";
@@ -126,7 +126,7 @@ export interface Env {
   CARTESIA_API_KEY?: string;
 
   /* ---------- Bindings required by the new module ---------- */
-  AI: any;                       // Workers AI binding
+  AI: Ai;                        // Workers AI binding
   KEYS: KVNamespace;             // public JWKS (key "jwks")
   KV_BILLING: KVNamespace;       // credits + usage + jobs
   R2_UPLOADS: R2Bucket;          // direct-upload bucket
@@ -149,8 +149,9 @@ export interface Env {
 }
 
 /** (Legacy) Original Bindings type — kept for reference. Prefer Env above. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type Bindings = {
-  AI: any; // Workers AI binding
+  AI: Ai; // Workers AI binding
 
   // Database
   DATABASE_URL?: string;
@@ -238,7 +239,7 @@ app.use("*", async (c, next) => {
 
 // 1) Workers AI binding probe (used for sanity checks)
 app.get("/api/ai/binding", (c) => {
-  const ok = !!c.env.AI && typeof (c.env.AI as any).run === "function";
+  const ok = !!c.env.AI && typeof (c.env.AI as Ai).run === "function";
   return c.json({ ai_bound: ok }, ok ? 200 : 500);
 });
 
@@ -263,7 +264,7 @@ app.get("/.well-known/jwks.json", async (c) => {
 registerAuthBillingRoutes(app);
 
 // -------- Helpers --------
-const sqlFor = (c: any) => {
+const sqlFor = (c: Context<{ Bindings: Env }>) => {
   const dsn = c.env.DATABASE_URL || c.env.NEON_DATABASE_URL;
   if (!dsn) throw new HTTPException(500, { message: "DATABASE_URL not set" });
   return neon(dsn);
@@ -344,7 +345,7 @@ function defaultModel(provider: string) {
 }
 
 async function runProvider(
-  c: any,
+  c: Context<{ Bindings: Env }>,
   provider: "groq" | "openai" | "workers_ai",
   model: string,
   p: { prompt: string; system: string | null; max_tokens: number; temperature: number }
@@ -374,7 +375,7 @@ async function runProvider(
     });
 
     // Read JSON once, then throw a typed HTTPException if not ok
-    const j: any = await r.json().catch(() => ({}));
+    const j: { choices?: Array<{ message?: { content?: string } }> } = await r.json().catch(() => ({}));
     if (!r.ok) {
       const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
       throw new HTTPException(502, { message: `groq_error:${r.status} ${detail}` });
@@ -406,7 +407,7 @@ async function runProvider(
       body: JSON.stringify(body),
     });
 
-    const j: any = await r.json().catch(() => ({}));
+    const j: { choices?: Array<{ message?: { content?: string } }> } = await r.json().catch(() => ({}));
     if (!r.ok) {
       const detail = j && Object.keys(j).length ? JSON.stringify(j) : String(r.statusText || "");
       throw new HTTPException(502, { message: `openai_error:${r.status} ${detail}` });
@@ -433,9 +434,9 @@ async function runProvider(
   return text.trim();
 }
 
-async function completeWithProvider(c: any, body: any) {
+async function completeWithProvider(c: Context<{ Bindings: Env }>, body: { prompt?: string; system?: string | null; max_tokens?: number; temperature?: number }) {
   const askedProvider =
-    (c.req.header("x-llm-provider") as any) || c.env.LLM_PROVIDER || "groq";
+    (c.req.header("x-llm-provider") as string | undefined) || c.env.LLM_PROVIDER || "groq";
   const askedModel =
     c.req.header("x-llm-model") || c.env.LLM_MODEL || defaultModel(askedProvider);
 
@@ -447,13 +448,13 @@ async function completeWithProvider(c: any, body: any) {
   if (!prompt) throw new HTTPException(400, { message: "Missing prompt" });
 
   const providers: Array<"groq" | "workers_ai" | "openai"> = [
-    askedProvider as any,
+    askedProvider as "groq" | "workers_ai" | "openai",
     ...(askedProvider === "groq" ? (["workers_ai", "openai"] as const) : []),
     ...(askedProvider === "workers_ai" ? (["groq", "openai"] as const) : []),
     ...(askedProvider === "openai" ? (["groq", "workers_ai"] as const) : []),
   ];
 
-  let lastErr: any = null;
+  let lastErr: Error | null = null;
   for (const p of providers) {
     try {
       const model = p === askedProvider ? askedModel : defaultModel(p);
@@ -468,7 +469,7 @@ async function completeWithProvider(c: any, body: any) {
 }
 
 // -------- DB helpers --------
-async function ensureSchema(_c: any, sql: any) {
+async function ensureSchema(_c: Context<{ Bindings: Env }>, sql: NeonQueryFunction<false, false>) {
   // Try extension; some platforms disallow CREATE EXTENSION.
   try {
     await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`;
@@ -511,7 +512,7 @@ async function ensureSchema(_c: any, sql: any) {
   await sql`CREATE INDEX IF NOT EXISTS idx_usage_event_user_time ON usage_event(user_id, created_at DESC)`;
 }
 
-async function ensureUserByEmail(sql: any, email: string): Promise<string> {
+async function ensureUserByEmail(sql: NeonQueryFunction<false, false>, email: string): Promise<string> {
   const r = await sql<{ id: string }>`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
   if (r.length) return r[0].id;
 
@@ -520,7 +521,7 @@ async function ensureUserByEmail(sql: any, email: string): Promise<string> {
   return newId;
 }
 
-async function getBalance(sql: any, userId: string): Promise<number> {
+async function getBalance(sql: NeonQueryFunction<false, false>, userId: string): Promise<number> {
   const r = await sql<{ bal: string }>`
     SELECT COALESCE(SUM(amount_credits), 0)::text AS bal
     FROM credit_txn WHERE user_id = ${userId}
@@ -547,6 +548,7 @@ app.get("/ready", (c) => {
   return c.json({ ok: true, provider, model });
 });
 
+ 
 app.post("/auth/guest", async (_c) => {
   const token = crypto.randomUUID();
   const expires_in = 600;
@@ -585,7 +587,7 @@ app.post("/v1/files/upload", async (c) => {
   }
 
   // 3) Store to R2
-  const name = (file as any).name || "upload";
+  const name = (file as File).name || "upload";
   const ct = (file as File).type || "application/octet-stream";
   const ext = name.includes(".") ? name.split(".").pop()! : (ct.split("/")[1] || "bin");
   const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -630,8 +632,8 @@ app.post("/v1/files/upload", async (c) => {
             method: "POST",
             headers: { "x-admin-task": c.env.ADMIN_TASK_SECRET || "" },
           }),
-          c.env as any,
-          c.executionCtx as any
+          c.env as Env,
+          c.executionCtx
         );
         console.log(`[trigger rid=${rid}] internal status=${resp.status}`);
       } catch (e) {
@@ -650,10 +652,11 @@ app.post("/api/v1/llm/complete", async (c) => {
     const body = await c.req.json();
     const { text, provider, model } = await completeWithProvider(c, body);
     return c.json({ text, provider, model });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const error = e as Error;
     const status = e instanceof HTTPException ? e.status : 500;
     return c.json(
-      { error: "upstream_error", status, detail: String(e?.cause || e?.message || e) },
+      { error: "upstream_error", status, detail: String((error as { cause?: string })?.cause || error?.message || error) },
       status
     );
   }
@@ -697,22 +700,22 @@ app.get("/api/billing/usage", async (c) => {
     WHERE user_id = ${uid}
     ORDER BY created_at DESC
     LIMIT 50
-  `) as any[];
+  `) as Array<Record<string, unknown>>;
   return c.json({ events: rows });
 });
 
 // aliases for usage (older UI variations)
 app.get("/api/v1/billing/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/api/v1", "/api")), c.env as Env, c.executionCtx)
 );
 app.get("/billing/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/billing/usage", "/api/billing/usage")), c.env as Env, c.executionCtx)
 );
 app.get("/api/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/api/usage", "/api/billing/usage")), c.env as Env, c.executionCtx)
 );
 app.get("/usage", (c) =>
-  app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as any, c.executionCtx as any)
+  app.fetch(new Request(c.req.url.replace("/usage", "/api/billing/usage")), c.env as Env, c.executionCtx)
 );
 
 // -------- SI skills (with queue path) --------
@@ -771,8 +774,8 @@ app.post("/api/si/ask", async (c) => {
               method: "POST",
               headers: { "x-admin-task": c.env.ADMIN_TASK_SECRET || "" },
             }),
-            c.env as any,
-            c.executionCtx as any
+            c.env as Env,
+            c.executionCtx
           );
           console.log(`[trigger rid=${requestId}] internal status=${resp.status}`);
         } catch (e) {
@@ -847,7 +850,7 @@ app.post("/api/si/ask", async (c) => {
       tokens_out,
       request_id: requestId,
       skill,
-    }) as any})
+    })})
   `;
 
   const newBal = await getBalance(sql, userId);
@@ -885,7 +888,7 @@ app.get("/api/jobs/:id", async (c) => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
-  const rows = (await sql`SELECT * FROM job WHERE id = ${id} LIMIT 1`) as any[];
+  const rows = (await sql`SELECT * FROM job WHERE id = ${id} LIMIT 1`) as Array<Record<string, unknown>>;
   if (!rows.length) return c.json({ error: "not_found" }, 404);
   return c.json({ job: rows[0] });
 });
@@ -910,17 +913,17 @@ app.get("/api/jobs/:id/download", async (c) => {
     )
   `;
 
-  const rows = (await sql`SELECT r2_url, result_text FROM job WHERE id = ${id} LIMIT 1`) as any[];
+  const rows = (await sql`SELECT r2_url, result_text FROM job WHERE id = ${id} LIMIT 1`) as Array<{ r2_url?: string; result_text?: string }>;
   if (!rows.length) return c.json({ error: "not_found" }, 404);
 
   const { r2_url, result_text } = rows[0] ?? {};
 
-  if (r2_url && (c.env as any).R2) {
-    const obj = await (c.env as any).R2.get(r2_url);
+  if (r2_url && c.env.R2) {
+    const obj = await c.env.R2.get(r2_url);
     if (obj && obj.body) {
       const ct = (obj.httpMetadata && obj.httpMetadata.contentType) || "application/octet-stream";
       const fname = (r2_url as string).split("/").pop() || "download.bin";
-      return new Response(obj.body as any, {
+      return new Response(obj.body, {
         headers: {
           "content-type": ct,
           "content-disposition": `attachment; filename="${fname}"`,
@@ -978,7 +981,7 @@ app.post("/admin/process-one", async (c) => {
     WHERE status = 'queued'
     ORDER BY created_at ASC
     LIMIT 1
-  `) as any[];
+  `) as Array<{ id?: string; skill?: string; payload_text?: string; r2_file_key?: string }>;
   const count = items.length;
   console.log(`[admin rid=${c.get("rid") || requestIdFrom(c.req.raw)}] queued=${count}`);
   if (!count) return c.json({ ok: true, processed: 0 });
@@ -1010,12 +1013,12 @@ ${spec.slice(0, 200)}
   // Upload to R2 (optional)
   let r2Key: string | null = null;
   try {
-    const primary = (result as any).files?.[0];
-    if (primary && (c.env as any).R2) {
+    const primary = (result as { files?: Array<{ path?: string; contents?: string }> }).files?.[0];
+    if (primary && c.env.R2) {
       const k = `jobs/${j.id}/${primary.path}`;
-      await (c.env as any).R2.put(k, primary.contents, {
+      await c.env.R2.put(k, primary.contents || "", {
         httpMetadata: { contentType: "text/markdown; charset=utf-8" },
-        customMetadata: { job_id: j.id, type: j.type },
+        customMetadata: { job_id: j.id || "", type: j.skill || "" },
       });
       r2Key = k;
     }
@@ -1077,8 +1080,8 @@ app.get("/api/admin/env-snapshot", (c) => {
     AI: !!c.env.AI,
     KEYS: !!c.env.KEYS,
     KV_BILLING: !!c.env.KV_BILLING,
-    R2: !!(c.env as any).R2,
-    R2_UPLOADS: !!(c.env as any).R2_UPLOADS,
+    R2: !!c.env.R2,
+    R2_UPLOADS: !!c.env.R2_UPLOADS,
     KV_PREFS: !!c.env.KV_PREFS,   // <— new: voice prefs KV presence
   };
 
@@ -1101,13 +1104,14 @@ app.get("/api/admin/env-snapshot", (c) => {
  */
 app.post("/api/tts/cartesia/batch", async (c) => {
   const key = c.env.CARTESIA_API_KEY || "";
-  const wants = c.req.header("accept") || "";
+  // wants, voice, and format are for future use
+  // const wants = c.req.header("accept") || "";
 
   // Read JSON body (tolerant)
   const body = await c.req.json().catch(() => ({}));
-  const text = String(body?.text || "");
-  const voice = (body?.voice && String(body.voice)) || undefined;
-  const format = (body?.format && String(body.format)) || "mp3";
+  const text = String((body as { text?: string }).text || "");
+  // const voice = ((body as { voice?: string }).voice && String((body as { voice?: string }).voice)) || undefined;
+  // const format = ((body as { format?: string }).format && String((body as { format?: string }).format)) || "mp3";
 
   if (!text.trim()) return c.json({ error: "missing_text" }, 400);
 
@@ -1168,16 +1172,16 @@ const DEFAULT_PREFS: VoicePrefs = {
   accessibility_mode: false,
 };
 
-function isPlainObject(v: any): v is Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v);
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
-function sanitizePrefs(input: any): VoicePrefs {
+function sanitizePrefs(input: unknown): VoicePrefs {
   const out: VoicePrefs = { ...DEFAULT_PREFS };
   if (!isPlainObject(input)) return out;
 
-  const copyIf = <T>(k: keyof VoicePrefs, pred: (x: any) => x is T) => {
-    if (k in input && pred((input as any)[k])) (out as any)[k] = (input as any)[k];
+  const copyIf = <T>(k: keyof VoicePrefs, pred: (x: unknown) => x is T) => {
+    if (k in input && pred(input[k])) (out[k] as T) = input[k] as T;
   };
 
   copyIf<string>("assistant_name", (x): x is string => typeof x === "string" && x.length <= 64);
@@ -1186,18 +1190,18 @@ function sanitizePrefs(input: any): VoicePrefs {
   copyIf<string>("tts_voice", (x): x is string => typeof x === "string" && x.length <= 64);
   copyIf<number>("tts_speed", (x): x is number => typeof x === "number" && isFinite(x) && x > 0 && x <= 3);
   copyIf<number>("tts_pitch", (x): x is number => typeof x === "number" && isFinite(x) && x >= -24 && x <= 24);
-  if (Array.isArray((input as any).wake_words)) {
-    out.wake_words = (input as any).wake_words
-      .map((s: any) => (typeof s === "string" ? s.trim() : ""))
+  if (Array.isArray((input as Record<string, unknown>).wake_words)) {
+    out.wake_words = ((input as Record<string, unknown>).wake_words as unknown[])
+      .map((s: unknown) => (typeof s === "string" ? s.trim() : ""))
       .filter(Boolean)
       .slice(0, 10);
   }
   copyIf<boolean>("continuous_listen", (x): x is boolean => typeof x === "boolean");
   if (
-    typeof (input as any).sentiment_tone === "string" &&
-    ["supportive", "excited", "calm", "neutral"].includes((input as any).sentiment_tone)
+    typeof (input as Record<string, unknown>).sentiment_tone === "string" &&
+    ["supportive", "excited", "calm", "neutral"].includes((input as Record<string, unknown>).sentiment_tone as string)
   ) {
-    out.sentiment_tone = (input as any).sentiment_tone as any;
+    out.sentiment_tone = (input as Record<string, unknown>).sentiment_tone as "supportive" | "excited" | "calm" | "neutral";
   }
   copyIf<boolean>("accessibility_mode", (x): x is boolean => typeof x === "boolean");
 
@@ -1205,7 +1209,7 @@ function sanitizePrefs(input: any): VoicePrefs {
   const raw = JSON.stringify(input);
   if (raw.length <= 10_000) {
     for (const [k, v] of Object.entries(input)) {
-      if (!(k in out)) (out as any)[k] = v;
+      if (!(k in out)) (out as Record<string, unknown>)[k] = v;
     }
   }
   out.last_updated = new Date().toISOString();
@@ -1224,7 +1228,7 @@ app.get("/api/voice/prefs", async (c) => {
   if (raw) {
     try {
       const j = JSON.parse(raw);
-      if (isPlainObject(j)) prefs = { ...DEFAULT_PREFS, ...(j as any) };
+      if (isPlainObject(j)) prefs = { ...DEFAULT_PREFS, ...sanitizePrefs(j) };
     } catch {
       // ignore bad JSON; treat as defaults
     }
@@ -1238,7 +1242,7 @@ app.get("/api/voice/prefs", async (c) => {
     200,
     {
       "Cache-Control": "no-store",
-    } as any
+    }
   );
 });
 
@@ -1268,7 +1272,7 @@ app.put("/api/voice/prefs", async (c) => {
     200,
     {
       "Cache-Control": "no-store",
-    } as any
+    }
   );
 });
 
@@ -1287,7 +1291,7 @@ export default {
 
     await (async () => {
       for (let i = 0; i < 5; i++) {
-        const resp = await app.fetch(makeReq(), env as any, ctx as any);
+        const resp = await app.fetch(makeReq(), env, ctx);
         if (!resp.ok) break;
         const text = await resp.text().catch(() => "");
         if (text.includes('"processed":0')) break; // nothing to do

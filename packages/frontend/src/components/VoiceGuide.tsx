@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/components/VoiceGuide.tsx
 /**
  * VoiceGuide — lightweight AI-style voice guidance for your UI.
@@ -114,7 +115,6 @@ export default function VoiceGuide({
     } else if (!enabled && supportsSpeech()) {
       window.speechSynthesis.cancel();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
   // Load voices
@@ -159,7 +159,6 @@ export default function VoiceGuide({
       document.removeEventListener("mouseover", onOver, true);
       document.removeEventListener("focusin", onFocus, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, selectors, skipSelectors, rateLimitMs, perElemCooldownMs]);
 
   function targetFromEvent(e: Event): Element | null {

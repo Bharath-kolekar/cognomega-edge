@@ -5,6 +5,7 @@
  * The package's published typings vary by version; this keeps the compiler happy
  * and provides light IntelliSense without locking you to a specific version.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 declare module "@mlc-ai/web-llm" {
   /** Progress events reported during engine initialization. */
   export interface InitProgressReport {

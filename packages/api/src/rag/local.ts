@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // packages/api/src/rag/local.ts
 // Local-first embeddings + reranker for RAG quality parity.
 // - Talks to a local OpenAI-compatible gateway (vLLM / llama.cpp / FastAPI).

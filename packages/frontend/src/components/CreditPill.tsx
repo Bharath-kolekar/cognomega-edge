@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/components/CreditPill.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, authHeaders } from "../lib/api/apiBase";

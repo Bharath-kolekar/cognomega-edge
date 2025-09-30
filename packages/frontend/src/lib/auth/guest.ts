@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/lib/auth/guest.ts
 //
 // Client-side guest-auth helper used by the app.

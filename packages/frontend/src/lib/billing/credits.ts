@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { apiUrl, ensureApiEndpoints, fetchJson } from "../api/apiBase";
 
 export type CreditsInfo = {
