@@ -5,7 +5,7 @@ import reactPlugin from 'eslint-plugin-react';
 import globals from 'globals';
 
 export default [
-  // Global ignores
+  // Global ignores for problematic directories
   {
     ignores: [
       '**/node_modules/**',
@@ -31,9 +31,11 @@ export default [
       '**/*.d.ts',
       '**/*.min.js',
       '**/*.min.css',
+      '**/*.config.js',
+      '**/*.config.ts',
     ]
   },
-  
+
   // TypeScript files in packages and src
   {
     files: ['packages/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
@@ -62,6 +64,7 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // TypeScript rules
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -87,10 +90,11 @@ export default [
     },
   },
 
-  // JavaScript files
+  // JavaScript files - no type checking
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
+      parser: tsParser,
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
@@ -102,13 +106,18 @@ export default [
         ...globals.browser,
         ...globals.es2020,
         ...globals.node,
+        React: 'readonly',
+        JSX: 'readonly'
       },
     },
     plugins: {
+      '@typescript-eslint': tseslint,
       'react-hooks': reactHooks,
       'react': reactPlugin,
     },
     rules: {
+      ...tseslint.configs.recommended.rules,
+      '@typescript-eslint/no-var-requires': 'off',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
       'react-hooks/rules-of-hooks': 'error',
