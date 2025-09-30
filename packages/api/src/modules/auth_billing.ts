@@ -20,7 +20,7 @@
 import type { Hono } from "hono";
 
 /* ---------- Minimal R2 type (local) ---------- */
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 type R2Bucket = {
   put: (
     key: string,
@@ -38,7 +38,7 @@ type R2Bucket = {
     | null
   >;
 };
-/* eslint-enable @typescript-eslint/no-explicit-any */
+ 
 
 // KV list typing (prevents implicit any recursion errors)
 type KVListResult = Awaited<ReturnType<KVNamespace["list"]>>;

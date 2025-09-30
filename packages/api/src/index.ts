@@ -548,7 +548,7 @@ app.get("/ready", (c) => {
   return c.json({ ok: true, provider, model });
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 app.post("/auth/guest", async (_c) => {
   const token = crypto.randomUUID();
   const expires_in = 600;

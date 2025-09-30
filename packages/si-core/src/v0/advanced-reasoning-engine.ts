@@ -142,8 +142,8 @@ export class AdvancedReasoningEngine {
   // ---- Advanced Reasoning (feat/v0-import) ----
   async performAdvancedReasoning(query: string, contextArr: ContextItem[]): Promise<ReasoningChain> {
     const reasoningId = `reasoning_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const complexity = this.analyzeQueryComplexity(query);
-    // approach is computed but not used in this implementation
+    // complexity and approach are computed but not used in this implementation
+    // const complexity = this.analyzeQueryComplexity(query);
     // const approach = this.selectReasoningApproach(complexity, contextArr);
     const steps: ReasoningStep[] = [];
     // Deductive reasoning
