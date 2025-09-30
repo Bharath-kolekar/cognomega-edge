@@ -472,7 +472,7 @@ async function callCfAi(env: AuthBillingEnv, messages: ChatMessage[]) {
   if (!env.AI || typeof env.AI.run !== "function")
     throw new Error("AI binding missing");
   const model = pickCfModel(env);
-  const out = await env.AI.run(model, { messages, max_tokens: 512 });
+  const out = await env.AI.run(model as any, { messages, max_tokens: 512 });
   const text = normalizeWorkersAiText(out);
   const inTok = estimateTokens(JSON.stringify(messages));
   const outTok = estimateTokens(text);
@@ -982,7 +982,7 @@ export async function handleAuthBilling(
       const prompt = (body?.prompt ?? "Say 'pong'").toString();
       try {
         const model = env.CF_AI_MODEL || "@cf/meta/llama-3.1-8b-instruct";
-        const result = await env.AI.run(model, {
+        const result = await env.AI.run(model as any, {
           messages: [{ role: "user", content: prompt }],
           max_tokens: 64,
         });

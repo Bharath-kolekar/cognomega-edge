@@ -27,7 +27,6 @@ export default [
       'packages/si-core/dist/**',
       'imports/v0-20250927-003305/**',
       '_ops/snapshot/**',
-      'proxy/**',
       'packages/frontend/legacy/**',
       '**/*.d.ts',
       '**/*.min.js',
@@ -65,7 +64,6 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
-      
       // TypeScript rules
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
