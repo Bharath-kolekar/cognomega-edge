@@ -133,7 +133,7 @@ async function testMultiAgentSystem() {
 }
 
 // Run if executed directly
-if (require.main === module) {
+if (import.meta.main) {
   testMultiAgentSystem()
     .then((result) => {
       process.exit(result.success ? 0 : 1);
