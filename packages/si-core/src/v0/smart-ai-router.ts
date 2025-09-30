@@ -51,10 +51,11 @@ class SmartAIRouter {
     choices: Array<{ message: { content: string } }>;
     usage?: { total_tokens: number };
   }> {
+    const groqApiKey = typeof process !== 'undefined' && process.env ? process.env.GROQ_API_KEY : undefined;
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${groqApiKey || ''}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
