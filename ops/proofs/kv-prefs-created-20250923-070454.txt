@@ -1,4 +1,0 @@
-== KV_PREFS namespace created ==
-id=ef783de622644eb89ff2dacfcc41a2f2
-when=2025-09-23T07:04:54
-note=Infra-only; binding to wrangler.toml will be a separate step.

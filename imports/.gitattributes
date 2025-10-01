@@ -1,2 +1,0 @@
-# Treat all imports as vendored to avoid skewing language stats
-imports/** linguist-vendored

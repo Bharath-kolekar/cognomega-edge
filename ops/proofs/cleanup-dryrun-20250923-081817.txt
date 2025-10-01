@@ -1,6 +1,0 @@
-== request ==
-email=vihaan@cognomega.com
-rid=9836b5a3c963ce1d
-
-== response ==
-{"ok":true,"dry_run":true,"kind":"both","older_than_days":0,"limit":10,"scanned":{"usage":10,"jobs_index":0,"jobs_rows_checked":0},"deleted":{"usage_keys":10,"job_index_keys":0,"job_rows":0},"kept":{"usage_keys":0,"job_index_keys":0,"job_rows":0}}
