@@ -35,32 +35,171 @@ See **OPS.md** for the detailed contract.
 
 ---
 
-## 🧭 Monorepo Layout
+## 🧭 Microservices Monorepo Architecture
+
+Cognomega is structured as a monorepo supporting multiple independent microservices, each deployable separately:
 
 ```
-
 cognomega-edge/
 ├─ packages/
-│  ├─ api/          # Cloudflare Worker (Hono) — API, auth/billing, jobs, SI routes
-│  ├─ frontend/     # Vite + React app (Cognomega Builder UI)
-│  └─ si-core/      # Shared TypeScript library (skills/intelligence core)
-├─ scripts/         # Windows PowerShell utilities (validation, listing, etc.)
+│  ├─ api/          # @cognomega/api - Cloudflare Worker API microservice
+│  ├─ frontend/     # @cognomega/frontend - Main UI application
+│  ├─ builder/      # @cognomega/builder - Realtime app builder UI
+│  ├─ si-core/      # @cognomega/si-core - Shared intelligence library
+│  └─ inference/    # Python-based AI inference service (Docker)
+├─ scripts/         # Windows PowerShell utilities (validation, listing)
 ├─ .github/         # CI/CD workflows (see ci-cd.md)
 └─ README.md, OPS.md, architecture.md, ci-cd.md, tasks.md, roadmap.md
+```
 
-````
+### 📦 Microservices Overview
 
-**Key API additions (kept and expanded):**
-- Global CORS + Request-Id, unified headers exposure
-- **Auth/Billing/Usage** module mounted (`modules/auth_billing`)
-- **/api/si/ask** chat/skills entry point (delegates to `routes/siAsk` where applicable)
-- **/api/admin/rag-rank** (admin-only) — local embeddings/reranker ranking for RAG quality parity
-- **Voice prefs** KV APIs: `GET/PUT /api/voice/prefs`
-- **Jobs** queue + **/admin/process-one** (secured by header key)
-- **JWKS** served from KV at `/.well-known/jwks.json`
-- Local provider **allowlist guard** (env-driven) — enforces `local` only when desired
+#### **@cognomega/api** (Cloudflare Worker)
+- **Port**: 8787 (dev)
+- **Runtime**: Cloudflare Workers Edge
+- **Purpose**: Core API, auth, billing, AI orchestration
+- **Tech**: Hono framework, TypeScript
+- **Deploy**: Cloudflare Workers (GitHub Actions)
+- **README**: [packages/api/README.md](./packages/api/README.md)
 
-Everything above is implemented without deleting your existing behavior.
+#### **@cognomega/frontend** (Main UI)
+- **Port**: 5174 (dev)
+- **Deploy**: Cloudflare Pages / Static hosting
+- **Purpose**: Primary application interface
+- **Tech**: React 18, Vite, TypeScript
+- **Features**: Full-featured builder, AI assistant, voice interface
+- **README**: [packages/frontend/README.md](./packages/frontend/README.md)
+
+#### **@cognomega/builder** (Realtime Builder)
+- **Port**: 5175 (dev)
+- **Deploy**: Cloudflare Pages / Static hosting
+- **Purpose**: Interactive app builder with live preview
+- **Tech**: React 18, Vite, Monaco Editor
+- **Features**: Real-time code generation, live preview
+- **README**: [packages/builder/README.md](./packages/builder/README.md)
+
+#### **@cognomega/si-core** (Shared Library)
+- **Type**: TypeScript library (workspace dependency)
+- **Purpose**: Super intelligence core, multi-agent system, shared types
+- **Tech**: TypeScript, ES2020 modules
+- **Features**: 8 layers of AI intelligence, agent orchestration
+- **README**: [packages/si-core/README.md](./packages/si-core/README.md)
+
+#### **inference** (AI Inference Service)
+- **Port**: 8080 (configurable)
+- **Deploy**: Docker / Kubernetes
+- **Purpose**: Python-based AI model serving
+- **Tech**: Python, FastAPI, Docker
+- **Features**: Custom model inference, embeddings
+- **README**: [packages/inference/README.md](./packages/inference/README.md)
+
+### 🔗 TypeScript Project References
+
+All packages use TypeScript project references for:
+- Fast incremental builds
+- Cross-package type checking
+- Proper dependency ordering
+- IDE intelligence across packages
+
+Each package has `composite: true` and references dependencies via `workspace:*` protocol.
+
+### 🛠️ Workspace Commands
+
+**Build all packages:**
+```powershell
+pnpm run build
+```
+
+**Type check all packages:**
+```powershell
+pnpm run typecheck
+```
+
+**Develop specific microservice:**
+```powershell
+pnpm dev:api        # Start API service (port 8787)
+pnpm dev:frontend   # Start frontend UI (port 5174)
+pnpm dev:builder    # Start builder UI (port 5175)
+```
+
+**Build individual package:**
+```powershell
+pnpm -C packages/api build
+pnpm -C packages/frontend build
+pnpm -C packages/builder build
+pnpm -C packages/si-core build
+```
+
+**Verify entire monorepo:**
+```powershell
+pnpm run verify     # Typecheck + lint + build all
+```
+
+### 🎯 Independent Development
+
+Each microservice can be developed independently:
+
+1. **Navigate to package**:
+   ```powershell
+   cd packages/frontend
+   ```
+
+2. **Install dependencies** (if needed):
+   ```powershell
+   pnpm install
+   ```
+
+3. **Run development server**:
+   ```powershell
+   pnpm dev
+   ```
+
+4. **Build for production**:
+   ```powershell
+   pnpm build
+   ```
+
+### 🚀 Independent Deployment
+
+Each microservice deploys independently:
+
+- **API**: Deploys to Cloudflare Workers via GitHub Actions
+- **Frontend**: Deploys to Cloudflare Pages or static hosting
+- **Builder**: Deploys to Cloudflare Pages or static hosting  
+- **SI-Core**: Published as workspace dependency (no separate deploy)
+- **Inference**: Deploys as Docker container to Kubernetes/Docker Compose
+
+All production deploys **must** go through GitHub (see ci-cd.md).
+
+### 📚 Contributing to Microservices
+
+When working on a specific microservice:
+
+1. **Read the package README**: Each package has comprehensive documentation
+2. **Check type safety**: Run `pnpm typecheck` before committing
+3. **Update shared types**: If changing si-core, rebuild dependent packages
+4. **Test locally**: Run the dev server and verify functionality
+5. **Follow conventions**: Match existing patterns in each package
+
+### 🔐 Microservices Integration
+
+Microservices communicate via:
+- **HTTP/REST**: Frontend/Builder → API
+- **Workspace imports**: All packages → si-core types
+- **Environment variables**: Configuration per service
+- **CORS**: API configured for frontend/builder origins
+
+### 🏗️ Adding New Microservices
+
+To add a new microservice package:
+
+1. Create directory: `packages/new-service/`
+2. Add `package.json` with scoped name: `@cognomega/new-service`
+3. Add `tsconfig.json` with `composite: true`
+4. Add to root `tsconfig.json` references
+5. Update `pnpm-workspace.yaml` (usually auto-detected)
+6. Create comprehensive README.md
+7. Document integration points
 
 ---
 

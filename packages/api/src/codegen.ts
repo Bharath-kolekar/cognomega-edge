@@ -1,6 +1,6 @@
 // Main code generation handler for Cognomega AI Platform
 
-import { SuperIntelligenceEngines } from '@cognomega/si-core/src/v0/super-intelligence-registry';
+import { SuperIntelligenceEngines } from '@cognomega/si-core';
 
 // Supported frameworks
 const SUPPORTED_FRAMEWORKS = ['react', 'nextjs', 'vue', 'angular', 'html'] as const;
